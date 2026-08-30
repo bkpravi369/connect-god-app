@@ -15,6 +15,7 @@ import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import { useToast } from '@/components/ToastProvider';
 
 import { getApiKey, syncAllYouTubeMedia, YouTubeVideo } from '@/lib/youtube';
+import { fetchPodcastVideos, getCachedPodcastVideos } from '@/services/podcastService';
 
 export type PodcastCardItem = {
   id: string;
@@ -114,6 +115,24 @@ export default function PodcastScreen() {
 
   const loadYouTubeMediaEngine = async (bypassCache = false) => {
     try {
+      // 1. Fetch from podcast service / API
+      const podcastItems = await fetchPodcastVideos(bypassCache);
+      if (podcastItems && podcastItems.length > 0) {
+        const liveItem = podcastItems.find((p) => p.category === 'live') || DEFAULT_MEDIA_FEEDS.live;
+        const podItem = podcastItems.find((p) => p.category === 'podcast') || DEFAULT_MEDIA_FEEDS.podcast;
+        const sheebaItem = podcastItems.find((p) => p.category === 'sheeba') || DEFAULT_MEDIA_FEEDS.sheeba;
+        const sheejaItem = podcastItems.find((p) => p.category === 'sheeja') || DEFAULT_MEDIA_FEEDS.sheeja;
+
+        setFeeds({
+          live: liveItem,
+          podcast: podItem,
+          sheeba: sheebaItem,
+          sheeja: sheejaItem,
+        });
+        setAllVideosList([liveItem, podItem, sheebaItem, sheejaItem]);
+      }
+
+      // 2. Also try direct client YouTube sync if available
       const mediaResult = await syncAllYouTubeMedia(bypassCache);
       if (mediaResult) {
         const liveCard = mapYtToCard(mediaResult.liveVideo, DEFAULT_MEDIA_FEEDS.live);

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "podcast-supreme-light",
+    "videoId": "uA-DDYjAniM",
+    "title": "DAILY MURLI PODCAST 22-8-26",
+    "channelName": "Supreme Light Creations",
+    "channelId": "UC98sbhynzcgLlx9x-SYi6zg",
+    "thumbnail": "https://img.youtube.com/vi/uA-DDYjAniM/hqdefault.jpg",
+    "url": "https://www.youtube.com/watch?v=uA-DDYjAniM",
+    "link": "https://www.youtube.com/watch?v=uA-DDYjAniM",
+    "badge": "TODAY PODCAST",
+    "badgeColor": "#d97706",
+    "category": "podcast",
+    "publishedAt": "2026-08-22T00:00:00Z",
+    "description": "Daily Murli Malayalam Podcast from Supreme Light Creations with deep spiritual wisdom and divine essence."
+  },
+  {
+    "id": "live-bks-calicut",
+    "videoId": "DlFt6-KwmcI",
+    "title": "Daily Murli Live Discourse & Morning Class - BK S Calicut",
+    "channelName": "BK S Calicut Live",
+    "channelId": "UCTrf0g3Dpi5lW-jddmPlOpA",
+    "thumbnail": "https://i.ytimg.com/vi/DlFt6-KwmcI/hqdefault.jpg",
+    "url": "https://www.youtube.com/watch?v=DlFt6-KwmcI",
+    "link": "https://www.youtube.com/watch?v=DlFt6-KwmcI",
+    "badge": "LIVE CLASS",
+    "badgeColor": "#dc2626",
+    "category": "live",
+    "publishedAt": "2026-08-22T01:00:00Z",
+    "description": "Daily live broadcast of Amritvela, Murli discourse, and guided Rajayoga meditation from Calicut center."
+  },
+  {
+    "id": "class-bk-sheeba",
+    "videoId": "_kKSsaZaklI",
+    "title": "Think This Way, And You Can Manifest Anything - BK Sheeba",
+    "channelName": "BK Sheeba",
+    "channelId": "UCtj3aB4eYUzi2GssD-g9aBA",
+    "thumbnail": "https://i.ytimg.com/vi/_kKSsaZaklI/hqdefault.jpg",
+    "url": "https://www.youtube.com/watch?v=_kKSsaZaklI",
+    "link": "https://www.youtube.com/watch?v=_kKSsaZaklI",
+    "badge": "CLASSES",
+    "badgeColor": "#c13584",
+    "category": "sheeba",
+    "publishedAt": "2026-08-21T10:00:00Z",
+    "description": "Powerful spiritual discourse and practical tips on the law of attraction, mind control, and Rajayoga."
+  },
+  {
+    "id": "meditation-bk-sheeja",
+    "videoId": "tiKb43faieY",
+    "title": "Spiritual Songs & Meditation Commentary - BK Sheeja",
+    "channelName": "BK Sheeja",
+    "channelId": "UCvQFuOM38iAZD7ltMujOq-g",
+    "thumbnail": "https://i.ytimg.com/vi/tiKb43faieY/hqdefault.jpg",
+    "url": "https://www.youtube.com/watch?v=tiKb43faieY",
+    "link": "https://www.youtube.com/watch?v=tiKb43faieY",
+    "badge": "MEDITATION",
+    "badgeColor": "#7c3aed",
+    "category": "sheeja",
+    "publishedAt": "2026-08-20T12:00:00Z",
+    "description": "Soul-healing meditation commentary, heart-touching Malayalam spiritual songs and silence experience."
+  }
+]

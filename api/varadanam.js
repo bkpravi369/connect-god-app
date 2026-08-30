@@ -19,6 +19,8 @@ export default async function handler(req, res) {
     const possiblePaths = [
       path.join(process.cwd(), 'src', 'data', 'varadanam.json'),
       path.join(process.cwd(), 'data', 'varadanam.json'),
+      path.join(process.cwd(), 'data', 'malayalam_murli_vardans.json'),
+      path.join(process.cwd(), 'malayalam_murli_vardans.json'),
     ];
 
     for (const p of possiblePaths) {

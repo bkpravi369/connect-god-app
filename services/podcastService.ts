@@ -37,7 +37,14 @@ export async function fetchPodcastVideos(forceRefresh = false): Promise<PodcastI
   }
 
   try {
-    const res = await fetch('/api/podcast', { signal: AbortSignal.timeout(5000) });
+    const res = await fetch(`/api/podcast?v=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+      signal: AbortSignal.timeout(5000),
+    });
     if (res.ok) {
       const data = await res.json();
       if (data?.episodes && Array.isArray(data.episodes) && data.episodes.length > 0) {

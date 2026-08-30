@@ -109,8 +109,17 @@ export async function fetchDynamicRemoteVaradanam(customUrl?: string): Promise<V
     process.env.EXPO_PUBLIC_VARADANAM_JSON_URL ||
     '/api/varadanam';
 
+  const separator = endpoint.includes('?') ? '&' : '?';
+  const urlWithCacheBuster = `${endpoint}${separator}v=${Date.now()}`;
+
   try {
-    const res = await fetch(endpoint);
+    const res = await fetch(urlWithCacheBuster, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {

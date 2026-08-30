@@ -33,7 +33,7 @@ import { useToast } from '@/components/ToastProvider';
 import type { AutoContentResult } from '@/lib/auto-content';
 
 import { syncDailyMurliData, DailyMurliSyncResult } from '@/services/murliService';
-import { getDailyVaradanamAndSwaman } from '@/services/varadanamDataset';
+import { getDailyVaradanamAndSwaman, fetchDynamicRemoteVaradanam } from '@/services/varadanamDataset';
 
 type Props = {
   varadan: Varadan;
@@ -61,12 +61,16 @@ export default function HomeScreen({
   const [selectedVideo, setSelectedVideo] = useState<VideoPlayItem | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [syncedData, setSyncedData] = useState<DailyMurliSyncResult | null>(null);
+  const [blessingData, setBlessingData] = useState(() => getDailyVaradanamAndSwaman());
 
   // Instant local dataset resolution for today's IST date
-  const todayBlessing = useMemo(() => getDailyVaradanamAndSwaman(), []);
+  const todayBlessing = blessingData;
 
-  // Sync today's live Varadanam & Swaman directly from in-project sync engine
+  // Sync today's live Varadanam & Swaman directly from in-project sync engine & remote JSON
   useEffect(() => {
+    fetchDynamicRemoteVaradanam().then(() => {
+      setBlessingData(getDailyVaradanamAndSwaman());
+    });
     syncDailyMurliData().then((res) => {
       if (res && res.success) {
         setSyncedData(res);
@@ -75,6 +79,9 @@ export default function HomeScreen({
   }, []);
 
   const handleRefresh = () => {
+    fetchDynamicRemoteVaradanam().then(() => {
+      setBlessingData(getDailyVaradanamAndSwaman());
+    });
     syncDailyMurliData(true).then((res) => {
       if (res && res.success) {
         setSyncedData(res);

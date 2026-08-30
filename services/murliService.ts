@@ -307,7 +307,13 @@ export async function syncDailyMurliData(forceRefresh = false): Promise<DailyMur
 
   // 2. Fetch from our in-project /api/daily-murli-sync serverless endpoint
   try {
-    const res = await fetch(`/api/daily-murli-sync?date=${encodeURIComponent(ddmmyy)}`);
+    const res = await fetch(`/api/daily-murli-sync?date=${encodeURIComponent(ddmmyy)}&v=${Date.now()}`, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
     if (res.ok) {
       const data = (await res.json()) as DailyMurliSyncResult;
       if (data && data.success) {
@@ -331,8 +337,14 @@ export async function syncDailyMurliData(forceRefresh = false): Promise<DailyMur
  */
 export async function fetchMurliHtmlContent(lang: string, date: string): Promise<string> {
   try {
-    const apiUrl = `/api/get-murli?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}`;
-    const res = await fetch(apiUrl);
+    const apiUrl = `/api/get-murli?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}&v=${Date.now()}`;
+    const res = await fetch(apiUrl, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
     if (res.ok) {
       const data = await res.json();
       if (data?.success && data.html) {

@@ -4,6 +4,7 @@ import Svg, { Defs, RadialGradient, Stop, Rect, Path, G } from 'react-native-svg
 import { BookOpen, ExternalLink, RotateCw, Sparkles } from 'lucide-react-native';
 import { FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import { Varadan } from '@/lib/constants';
+import { getTodayISTDateString, getFormattedMurliDate } from '@/services/murliService';
 
 type Props = {
   varadan: Varadan;
@@ -115,11 +116,8 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing }: Pr
     }
   };
 
-  const today = new Date();
-  const dd = String(today.getDate()).padStart(2, '0');
-  const mm = String(today.getMonth() + 1).padStart(2, '0');
-  const yy = String(today.getFullYear()).slice(-2);
-  const formattedDate = `${dd}.${mm}.${yy}`;
+  const todayDateStr = getTodayISTDateString();
+  const { ddmmyy: formattedDate } = getFormattedMurliDate(todayDateStr);
 
   const blessingText =
     varadan.textMl ||

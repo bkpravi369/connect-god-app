@@ -1,4 +1,5 @@
-import { getJSON, setJSON, removeItem } from '@/lib/storage';
+import { getJSON, setJSON, removeItem, getDateStampedJSON, setDateStampedJSON, purgeStaleStorageKeys } from '@/lib/storage';
+import varadanamData from '@/src/data/varadanam.json';
 import {
   DEFAULT_MURLI_CONFIG,
   DEFAULT_VARADAN,
@@ -292,36 +293,32 @@ export async function syncDailyMurliData(forceRefresh = false): Promise<DailyMur
   const { ddmmyy } = getFormattedMurliDate(targetDate);
   const cacheKey = `daily_murli_sync_${ddmmyy}`;
 
-  // 1. Instant check from localStorage
+  // Purge any outdated daily cache from previous days
+  purgeStaleStorageKeys(targetDate);
+
+  // 1. Instant check from localStorage with date validation
   if (!forceRefresh) {
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        const cached = window.localStorage.getItem(cacheKey);
-        if (cached) {
-          const parsed = JSON.parse(cached) as DailyMurliSyncResult;
-          if (parsed && parsed.heroData?.varadan) return parsed;
-        }
-      }
-    } catch {}
+    const cached = getDateStampedJSON<DailyMurliSyncResult | null>(cacheKey, targetDate, null);
+    if (cached && cached.heroData?.varadan) {
+      return cached;
+    }
   }
 
-  // 2. Fetch from our in-project /api/daily-murli-sync serverless endpoint
+  // 2. Fetch from our in-project /api/daily-murli-sync serverless endpoint with cache buster
+  const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   try {
-    const res = await fetch(`/api/daily-murli-sync?date=${encodeURIComponent(ddmmyy)}&v=${Date.now()}`, {
+    const res = await fetch(`/api/daily-murli-sync?date=${encodeURIComponent(ddmmyy)}&${cacheBuster}`, {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         Pragma: 'no-cache',
+        Expires: '0',
       },
     });
     if (res.ok) {
       const data = (await res.json()) as DailyMurliSyncResult;
-      if (data && data.success) {
-        try {
-          if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem(cacheKey, JSON.stringify(data));
-          }
-        } catch {}
+      if (data && data.success && data.heroData?.varadan) {
+        setDateStampedJSON(cacheKey, targetDate, data);
         return data;
       }
     }
@@ -336,8 +333,9 @@ export async function syncDailyMurliData(forceRefresh = false): Promise<DailyMur
  * Fetches and returns cleaned Murli HTML using our dedicated Vercel Serverless proxy (/api/get-murli)
  */
 export async function fetchMurliHtmlContent(lang: string, date: string): Promise<string> {
+  const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   try {
-    const apiUrl = `/api/get-murli?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}&v=${Date.now()}`;
+    const apiUrl = `/api/get-murli?lang=${encodeURIComponent(lang)}&date=${encodeURIComponent(date)}&${cacheBuster}`;
     const res = await fetch(apiUrl, {
       cache: 'no-store',
       headers: {
@@ -408,6 +406,15 @@ export function getCloudinaryDownloadPdfUrl(
  */
 export function generateDynamicDailyMurli(date: Date | string = getTodayISTDateString()): { ml: string; en: string; hi: string } {
   const info = getFormattedMurliDate(date);
+
+  let dynamicVaradan = 'സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി, മാസ്റ്റർ ദാതാവായി മാറി സർവ്വ ആത്മാക്കൾക്കും ശാന്തിയുടെയും ശക്തിയുടെയും ദാനം നൽകുന്ന സദാ തൃപ്ത ആത്മാവായി ഭവിക്കട്ടെ.';
+  if (Array.isArray(varadanamData)) {
+    const match = varadanamData.find((item) => item.date === info.isoDate);
+    if (match?.vardan) {
+      dynamicVaradan = match.vardan;
+    }
+  }
+
   const ml = `ഓം ശാന്തി ${info.formattedDateGb} ബാപ്ദാദാ മധുബൻ
 
 സാരം (Essence):
@@ -428,7 +435,7 @@ export function generateDynamicDailyMurli(date: Date | string = getTodayISTDateS
 2. വാചായിലും കർമ്മത്തിലും ആരെയും ദുഃഖിപ്പിക്കാതെ എല്ലാവർക്കും ദിവ്യ ഗുണങ്ങളുടെ പ്രകാശവും ശാന്തിയും നൽകുക.
 
 വരദാനം:
-സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി, മാസ്റ്റർ ദാതാവായി മാറി സർവ്വ ആത്മാക്കൾക്കും ശാന്തിയുടെയും ശക്തിയുടെയും ദാനം നൽകുന്ന സദാ തൃപ്ത ആത്മാവായി ഭവിക്കട്ടെ.
+${dynamicVaradan}
 വിശദീകരണം: ഏതൊരു കുട്ടിയാണോ ബാബയുടെ സർവ്വ ഖജനാവുകളാലും സ്വയം സമ്പൂർണ്ണനാകുന്നത്, അവർ ഓരോ നിമിഷവും ദാതാവായി മാറി ശാന്തി, സ്നേഹം, ആനന്ദം എന്നിവ സർവ്വ ജീവാത്മാക്കൾക്കും നൽകുന്നു.
 
 സ്ലോഗൻ:
@@ -871,9 +878,9 @@ export async function fetchDailyMurli(dateStr?: string, forceRefresh = false): P
     pdfUrl,
   };
 
-  // Cache in local storage for offline opening
-  setJSON(`${MURLI_CACHE_PREFIX}${targetDate}`, structured);
-  setJSON(STORAGE_KEYS.murliText, structured);
+  // Cache in local storage for offline opening with strict date stamp
+  setDateStampedJSON(`${MURLI_CACHE_PREFIX}${targetDate}`, targetDate, structured);
+  setDateStampedJSON(STORAGE_KEYS.murliText, targetDate, structured);
 
   // Sync Varadan card with today's live Varadan
   const varadanObj: Varadan = {
@@ -881,7 +888,7 @@ export async function fetchDailyMurli(dateStr?: string, forceRefresh = false): P
     text: varadanSnippetEn,
     audioUrl,
   };
-  setJSON(STORAGE_KEYS.varadan, varadanObj);
+  setDateStampedJSON(STORAGE_KEYS.varadan, targetDate, varadanObj);
 
   return structured;
 }

@@ -33,10 +33,11 @@ import {
   ZoomConfig,
   Channel,
 } from '@/lib/constants';
-import { getJSON } from '@/lib/storage';
+import { getJSON, getDateStampedJSON, purgeStaleStorageKeys } from '@/lib/storage';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { fetchAutoContent, getCachedAutoContent, AutoContentResult } from '@/lib/auto-content';
-import { fetchDailyMurli, getCachedDailyMurli, getInitialDailyMurli } from '@/services/murliService';
+import { fetchDailyMurli, getCachedDailyMurli, getInitialDailyMurli, getTodayISTDateString } from '@/services/murliService';
+import { getDailyVaradanamAndSwaman } from '@/services/varadanamDataset';
 import { fetchDailySwaman, getCachedDailySwaman, getSwamanByDate } from '@/services/swamanService';
 import { clearYouTubeCache } from '@/services/youtube';
 import { fetchDriveAudioPlaylist, driveTracksToMeditationItems } from '@/services/mediaService';
@@ -62,14 +63,16 @@ export default function App() {
 
   const initialMurli = getInitialDailyMurli();
   const initialSwaman = getSwamanByDate();
+  const todayBlessing = getDailyVaradanamAndSwaman();
 
   const [meditationItems, setMeditationItems] = useState<MeditationItem[]>(DEFAULT_MEDITATION_ITEMS);
   const [contacts, setContacts] = useState<ContactEntry[]>(DEFAULT_CONTACTS);
   const [varadan, setVaradan] = useState<Varadan>(() => {
-    const saved = getJSON<Varadan | null>(STORAGE_KEYS.varadan, null);
+    const today = getTodayISTDateString();
+    const saved = getDateStampedJSON<Varadan | null>(STORAGE_KEYS.varadan, today, null);
     if (saved && saved.textMl && saved.textMl !== DEFAULT_VARADAN.textMl) return saved;
     return {
-      textMl: initialMurli.varadanSnippetMl,
+      textMl: todayBlessing.varadanText || initialMurli.varadanSnippetMl,
       text: initialMurli.varadanSnippetEn,
       audioUrl: initialMurli.audioUrl,
     };
@@ -118,9 +121,17 @@ export default function App() {
 
   // ── Load persisted dynamic content on mount ──
   useEffect(() => {
+    const today = getTodayISTDateString();
+    purgeStaleStorageKeys(today);
+
     setMeditationItems(getJSON(STORAGE_KEYS.meditation, DEFAULT_MEDITATION_ITEMS));
     setContacts(getJSON(STORAGE_KEYS.contacts, DEFAULT_CONTACTS));
-    setVaradan(getJSON(STORAGE_KEYS.varadan, DEFAULT_VARADAN));
+    
+    const savedVaradan = getDateStampedJSON<Varadan | null>(STORAGE_KEYS.varadan, today, null);
+    if (savedVaradan && savedVaradan.textMl) {
+      setVaradan(savedVaradan);
+    }
+    
     setAnnouncement(getJSON(STORAGE_KEYS.announcement, DEFAULT_ANNOUNCEMENT));
     setSocialLinks(getJSON(STORAGE_KEYS.socialLinks, DEFAULT_SOCIAL_LINKS));
     setMurliConfig(getJSON(STORAGE_KEYS.murliConfig, DEFAULT_MURLI_CONFIG));

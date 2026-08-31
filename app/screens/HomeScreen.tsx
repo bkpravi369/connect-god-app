@@ -161,23 +161,37 @@ export default function HomeScreen({
 
   const featuredList = build2x2Videos(autoContent);
 
-  const effectiveVaradan: Varadan = {
-    ...varadan,
-    textMl: syncedData?.heroData?.varadan || todayBlessing.varadanText || varadan.textMl,
-    text: syncedData?.heroData?.varadan || todayBlessing.varadanText || varadan.text,
-  };
+  const effectiveVaradan: Varadan = useMemo(() => {
+    const resolvedText =
+      syncedData?.heroData?.varadan ||
+      todayBlessing?.varadanText ||
+      varadan?.textMl ||
+      DEFAULT_VARADAN.textMl;
 
-  const effectiveSwaman: Swaman = {
-    textMl:
+    return {
+      ...varadan,
+      textMl: resolvedText,
+      text: syncedData?.heroData?.varadan || todayBlessing?.varadanText || varadan?.text || DEFAULT_VARADAN.text,
+    };
+  }, [syncedData, todayBlessing, varadan]);
+
+  const effectiveSwaman: Swaman = useMemo(() => {
+    const resolvedSwamanMl =
       syncedData?.heroData?.swaman ||
-      todayBlessing.swamanText ||
+      todayBlessing?.swamanText ||
       (typeof swaman === 'string' ? swaman : swaman?.textMl) ||
-      'ഞാൻ സർവ്വ ശക്തിമാനായ പരമാത്മാവിന്റെ മാസ്റ്റർ സർവ്വശക്തിവാൻ കുട്ടിയാണ്.',
-    textEn:
-      todayBlessing.swamanTextEn ||
+      'ഞാൻ സർവ്വ ശക്തിമാനായ പരമാത്മാവിന്റെ മാസ്റ്റർ സർവ്വശക്തിവാൻ കുട്ടിയാണ്.';
+
+    const resolvedSwamanEn =
+      todayBlessing?.swamanTextEn ||
       (typeof swaman === 'object' && swaman ? swaman.textEn : '') ||
-      'I am the master almighty child of the Supreme Soul.',
-  };
+      'I am the master almighty child of the Supreme Soul.';
+
+    return {
+      textMl: resolvedSwamanMl,
+      textEn: resolvedSwamanEn,
+    };
+  }, [syncedData, todayBlessing, swaman]);
 
   return (
     <ScrollView

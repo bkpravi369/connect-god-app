@@ -1,5 +1,6 @@
 import { AutomationConfig, DEFAULT_AUTOMATION_CONFIG, Varadan, STORAGE_KEYS } from '@/lib/constants';
-import { getJSON, setJSON } from '@/lib/storage';
+import { getJSON, setJSON, getDateStampedJSON, setDateStampedJSON } from '@/lib/storage';
+import { getTodayISTDateString } from '@/services/murliService';
 import { syncAllYouTubeMedia, YouTubeVideo } from '@/lib/youtube';
 
 export type AutoVideo = {
@@ -28,7 +29,8 @@ const EDGE_FUNCTION = '/functions/v1/auto-content';
 const AUTO_CACHE_KEY = 'connectgod_auto_content_cache';
 
 export function getCachedAutoContent(): AutoContentResult | null {
-  return getJSON<AutoContentResult | null>(AUTO_CACHE_KEY, null);
+  const today = getTodayISTDateString();
+  return getDateStampedJSON<AutoContentResult | null>(AUTO_CACHE_KEY, today, null);
 }
 
 export async function fetchAutomationConfig(): Promise<AutomationConfig> {
@@ -100,8 +102,8 @@ export async function fetchAutoContent(bypassCache = false): Promise<AutoContent
       fullMurliText: localCached?.fullMurliText || null,
     };
 
-    // Aggressively cache to local storage for offline-first instant loading
-    setJSON(AUTO_CACHE_KEY, result);
+    // Cache to local storage for offline-first instant loading with date stamp
+    setDateStampedJSON(AUTO_CACHE_KEY, getTodayISTDateString(), result);
     return result;
   } catch {
     return localCached || {

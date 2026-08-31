@@ -1,6 +1,6 @@
 import varadanamData from '@/src/data/varadanam.json';
 import { getTodayISTDateString, getFormattedMurliDate } from '@/services/murliService';
-import { getJSON, setJSON } from '@/lib/storage';
+import { getJSON, setJSON, getDateStampedJSON, setDateStampedJSON } from '@/lib/storage';
 
 export interface VaradanamItem {
   date: string;
@@ -95,11 +95,12 @@ function deriveSwamanFromVaradan(varadanText: string, index: number): { ml: stri
 
 /**
  * Fetches dynamic remote Varadanam JSON from configured remote URL or API route.
- * Automatically updates persistent cache and in-memory dataset.
+ * Automatically updates persistent cache and in-memory dataset with strict cache busting.
  */
 export async function fetchDynamicRemoteVaradanam(customUrl?: string): Promise<VaradanamItem[]> {
-  // Check local storage cached remote data
-  const cached = getJSON<VaradanamItem[] | null>(REMOTE_CACHE_KEY, null);
+  const today = getTodayISTDateString();
+  // Check local storage cached remote data with date stamp
+  const cached = getDateStampedJSON<VaradanamItem[] | null>(REMOTE_CACHE_KEY, today, null);
   if (cached && Array.isArray(cached) && cached.length > 0) {
     memoryDataset = cached;
   }
@@ -110,7 +111,8 @@ export async function fetchDynamicRemoteVaradanam(customUrl?: string): Promise<V
     '/api/varadanam';
 
   const separator = endpoint.includes('?') ? '&' : '?';
-  const urlWithCacheBuster = `${endpoint}${separator}v=${Date.now()}`;
+  const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const urlWithCacheBuster = `${endpoint}${separator}${cacheBuster}`;
 
   try {
     const res = await fetch(urlWithCacheBuster, {
@@ -118,13 +120,14 @@ export async function fetchDynamicRemoteVaradanam(customUrl?: string): Promise<V
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         Pragma: 'no-cache',
+        Expires: '0',
       },
     });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         memoryDataset = data;
-        setJSON(REMOTE_CACHE_KEY, data);
+        setDateStampedJSON(REMOTE_CACHE_KEY, today, data);
         return data;
       }
     }
@@ -145,7 +148,7 @@ export function getDailyVaradanamAndSwaman(dateStr?: string): DailyBlessingEntry
 
   // Check cached remote data in storage if not yet in memory
   if (memoryDataset.length === varadanamData.length) {
-    const cached = getJSON<VaradanamItem[] | null>(REMOTE_CACHE_KEY, null);
+    const cached = getDateStampedJSON<VaradanamItem[] | null>(REMOTE_CACHE_KEY, targetDate, null);
     if (cached && Array.isArray(cached) && cached.length > 0) {
       memoryDataset = cached;
     }

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Connect GOD</string>
+    <string name="title_activity_main">Connect GOD</string>
+    <string name="package_name">com.connectgod.app</string>
+    <string name="custom_url_scheme">com.connectgod.app</string>
+</resources>

@@ -102,7 +102,7 @@ export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<Y
   if (apiKey) {
     try {
       const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${channelId}&q=Podcast&order=date&type=video&maxResults=20&key=${apiKey}`;
-      const sRes = await fetch(searchUrl).catch(() => null);
+      const sRes = await fetch(searchUrl, { cache: 'no-store' }).catch(() => null);
       if (sRes && sRes.ok) {
         const sData = await sRes.json();
         if (sData && Array.isArray(sData.items) && sData.items.length > 0) {
@@ -149,7 +149,7 @@ export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<Y
   try {
     const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-    const rRes = await fetch(rssEndpoint).catch(() => null);
+    const rRes = await fetch(rssEndpoint, { cache: 'no-store' }).catch(() => null);
     if (rRes && rRes.ok) {
       const rData = await rRes.json();
       if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
@@ -227,7 +227,7 @@ export async function fetchChannelLatestVideo(
   if (apiKey) {
     try {
       const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=5&key=${apiKey}`;
-      const sRes = await fetch(searchUrl).catch(() => null);
+      const sRes = await fetch(searchUrl, { cache: 'no-store' }).catch(() => null);
       if (sRes && sRes.ok) {
         const sData = await sRes.json();
         if (sData && Array.isArray(sData.items) && sData.items.length > 0) {
@@ -263,7 +263,7 @@ export async function fetchChannelLatestVideo(
   try {
     const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-    const rRes = await fetch(rssEndpoint).catch(() => null);
+    const rRes = await fetch(rssEndpoint, { cache: 'no-store' }).catch(() => null);
     if (rRes && rRes.ok) {
       const rData = await rRes.json();
       if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {

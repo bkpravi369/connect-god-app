@@ -36,12 +36,14 @@ export async function fetchPodcastVideos(forceRefresh = false): Promise<PodcastI
     }
   }
 
+  const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   try {
-    const res = await fetch(`/api/podcast?v=${Date.now()}`, {
+    const res = await fetch(`/api/podcast?${cacheBuster}`, {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         Pragma: 'no-cache',
+        Expires: '0',
       },
       signal: AbortSignal.timeout(5000),
     });

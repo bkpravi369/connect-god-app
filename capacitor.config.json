@@ -1,0 +1,6 @@
+{
+  "appId": "com.connectgod.app",
+  "appName": "Connect GOD",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

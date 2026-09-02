@@ -4,9 +4,29 @@ set -e
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
+# Auto-detect JAVA_HOME (prioritize OpenJDK 17 LTS, then Android Studio)
+if [ -z "${JAVA_HOME}" ] || [ ! -d "${JAVA_HOME}" ]; then
+  if [ -d "${HOME}/.jdk/current" ]; then
+    export JAVA_HOME="${HOME}/.jdk/current"
+  elif [ -d "/Applications/Android Studio.app/Contents/jbr/Contents/Home" ]; then
+    export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+  elif [ -x "/usr/libexec/java_home" ]; then
+    export JAVA_HOME="$(/usr/libexec/java_home -v 17 2>/dev/null || /usr/libexec/java_home 2>/dev/null || true)"
+  fi
+fi
+
+# Auto-detect ANDROID_HOME if not set
+if [ -z "${ANDROID_HOME}" ]; then
+  if [ -d "${HOME}/Library/Android/sdk" ]; then
+    export ANDROID_HOME="${HOME}/Library/Android/sdk"
+  fi
+fi
+
 echo "======================================================="
 echo "Building Release Android App Bundle (.aab) - Connect GOD"
 echo "Package ID: com.bkkozhikode.connectgod"
+echo "JAVA_HOME: ${JAVA_HOME}"
+echo "ANDROID_HOME: ${ANDROID_HOME}"
 echo "======================================================="
 
 # 1. Build Web Assets

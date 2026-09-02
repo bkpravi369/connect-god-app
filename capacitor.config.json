@@ -2,5 +2,15 @@
   "appId": "com.bkkozhikode.connectgod",
   "appName": "Connect GOD",
   "webDir": "dist",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://app.bkkozhikode.com",
+    "cleartext": false,
+    "allowNavigation": [
+      "app.bkkozhikode.com",
+      "connect-god-app.vercel.app",
+      "*.bkkozhikode.com",
+      "*.vercel.app"
+    ]
+  }
 }

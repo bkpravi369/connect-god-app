@@ -15,7 +15,7 @@
       }
     },
     "android": {
-      "package": "com.connectgod.app",
+      "package": "com.bkkozhikode.connectgod",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"

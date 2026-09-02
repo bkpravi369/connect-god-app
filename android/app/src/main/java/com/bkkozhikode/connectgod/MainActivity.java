@@ -1,4 +1,4 @@
-package com.connectgod.app;
+package com.bkkozhikode.connectgod;
 
 import com.getcapacitor.BridgeActivity;
 

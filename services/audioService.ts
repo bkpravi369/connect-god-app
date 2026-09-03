@@ -5,12 +5,42 @@ import { getJSON, setJSON } from '@/lib/storage';
 import {
   MediaTrack,
   MASTER_COMMENTARY_TRACKS,
+  SHEEBA_SISTER_COMMENTARIES,
+  SHEEJA_SISTER_COMMENTARIES,
+  OTHERS_COMMENTARIES,
+  OM_AND_BHORG_TRACKS,
+  OWN_TUNES_TRACKS,
+  FUNCTION_MUSIC_TRACKS,
+  OWN_MUSIC_TRACKS,
+  HINDI_RINGTONES,
+  MALAYALAM_RINGTONES,
   SONGS_DATA,
   MUSIC_DATA,
 } from '@/constants/mediaTracks';
 
 export const CLOUDINARY_CLOUD_NAME = 'tb5bmwd5';
 
+export type MainMediaTab = 'songs' | 'commentary' | 'music' | 'ringtones';
+
+export type SubTabKey =
+  // 1. Songs
+  | 'hindi'
+  | 'malayalam'
+  | 'om_and_bhorg'
+  | 'own_tunes'
+  // 2. Commentary
+  | 'sheeba_sister'
+  | 'sheeja_sister'
+  | 'others'
+  // 3. Music
+  | 'meditation_music'
+  | 'function_music'
+  | 'own_music'
+  // 4. Ringtones
+  | 'ringtone_hindi'
+  | 'ringtone_malayalam';
+
+// Backward compatibility type
 export type AudioCategoryTab = 'malayalam' | 'hindi' | 'music' | 'commentary';
 
 export interface CloudinaryRawResource {
@@ -32,23 +62,100 @@ export interface CloudinaryListResponse {
   updated_at?: string;
 }
 
-export const CLOUDINARY_TAG_ENDPOINTS = {
-  malayalam: `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/${encodeURIComponent('malayalam songs')}.json`,
-  hindi: `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/${encodeURIComponent('hindi songs')}.json`,
-  music: `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/music.json`,
-  musicAlt: `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/Musics.json`,
-} as const;
+export interface SubTabTagConfig {
+  primary: string;
+  fallbacks: string[];
+  category: 'song' | 'commentary' | 'music' | 'ringtone';
+  defaultSpeaker?: string;
+  staticFallback: MediaTrack[];
+}
 
-export const AUDIO_STORAGE_KEYS = {
-  malayalam: 'cloudinary_audio_malayalam_songs_v2',
-  hindi: 'cloudinary_audio_hindi_songs_v2',
-  music: 'cloudinary_audio_music_v2',
-} as const;
+export const CLOUDINARY_SUBTAB_CONFIG: Record<SubTabKey, SubTabTagConfig> = {
+  // ── 1. MAIN TAB: "Songs" ──────────────────────────────────────────────
+  hindi: {
+    primary: 'song_hindi',
+    fallbacks: ['hindi songs', 'hindi'],
+    category: 'song',
+    staticFallback: [],
+  },
+  malayalam: {
+    primary: 'song_malayalam',
+    fallbacks: ['malayalam songs', 'malayalam'],
+    category: 'song',
+    staticFallback: [],
+  },
+  om_and_bhorg: {
+    primary: 'om_bhorg',
+    fallbacks: ['om_bhog', 'om_dhwani'],
+    category: 'song',
+    staticFallback: OM_AND_BHORG_TRACKS,
+  },
+  own_tunes: {
+    primary: 'own_tunes',
+    fallbacks: ['own tunes'],
+    category: 'song',
+    staticFallback: OWN_TUNES_TRACKS,
+  },
+
+  // ── 2. MAIN TAB: "Commentary" ─────────────────────────────────────────
+  sheeba_sister: {
+    primary: 'commentary_sheeba',
+    fallbacks: ['sheeba_sister', 'sheeba'],
+    category: 'commentary',
+    defaultSpeaker: 'BK Sheeba Sister',
+    staticFallback: SHEEBA_SISTER_COMMENTARIES,
+  },
+  sheeja_sister: {
+    primary: 'commentary_sheeja',
+    fallbacks: ['sheeja_sister', 'sheeja'],
+    category: 'commentary',
+    defaultSpeaker: 'BK Sheeja Sister',
+    staticFallback: SHEEJA_SISTER_COMMENTARIES,
+  },
+  others: {
+    primary: 'commentary_others',
+    fallbacks: ['commentary'],
+    category: 'commentary',
+    staticFallback: OTHERS_COMMENTARIES,
+  },
+
+  // ── 3. MAIN TAB: "Music" ──────────────────────────────────────────────
+  meditation_music: {
+    primary: 'meditation_music',
+    fallbacks: ['Musics', 'music'],
+    category: 'music',
+    staticFallback: MUSIC_DATA,
+  },
+  function_music: {
+    primary: 'function_music',
+    fallbacks: ['function music'],
+    category: 'music',
+    staticFallback: FUNCTION_MUSIC_TRACKS,
+  },
+  own_music: {
+    primary: 'own_music',
+    fallbacks: ['own music'],
+    category: 'music',
+    staticFallback: OWN_MUSIC_TRACKS,
+  },
+
+  // ── 4. MAIN TAB: "Ringtones" ──────────────────────────────────────────
+  ringtone_hindi: {
+    primary: 'ringtone_hindi',
+    fallbacks: ['hindi_ringtone', 'ringtone'],
+    category: 'ringtone',
+    staticFallback: HINDI_RINGTONES,
+  },
+  ringtone_malayalam: {
+    primary: 'ringtone_malayalam',
+    fallbacks: ['ringtone', 'malayalam_ringtone'],
+    category: 'ringtone',
+    staticFallback: MALAYALAM_RINGTONES,
+  },
+};
 
 /**
  * Converts raw publicId or filename into clean, readable title case string
- * Example: `baba_milan_song` -> `Baba Milan Song`
- * Example: `04-Maanava-hridaya` -> `Maanava Hridaya`
  */
 export function formatCloudinaryTitle(raw: string): string {
   if (!raw) return '';
@@ -74,9 +181,12 @@ export function formatCloudinaryTitle(raw: string): string {
 
 /**
  * Constructs direct streaming audio URL for a Cloudinary resource
- * Example: https://res.cloudinary.com/tb5bmwd5/video/upload/v1787367169/04-Maanava-hridaya.mp3
  */
-export function buildCloudinaryAssetUrl(item: { version: number | string; public_id: string; format: string }): string {
+export function buildCloudinaryAssetUrl(item: {
+  version: number | string;
+  public_id: string;
+  format: string;
+}): string {
   const encPublicId = item.public_id.split('/').map(encodeURIComponent).join('/');
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/v${item.version}/${encPublicId}.${item.format || 'mp3'}`;
 }
@@ -84,7 +194,11 @@ export function buildCloudinaryAssetUrl(item: { version: number | string; public
 /**
  * Constructs direct download audio URL with fl_attachment for instant file download
  */
-export function buildCloudinaryAssetDownloadUrl(item: { version: number | string; public_id: string; format: string }): string {
+export function buildCloudinaryAssetDownloadUrl(item: {
+  version: number | string;
+  public_id: string;
+  format: string;
+}): string {
   const encPublicId = item.public_id.split('/').map(encodeURIComponent).join('/');
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/fl_attachment/v${item.version}/${encPublicId}.${item.format || 'mp3'}`;
 }
@@ -92,56 +206,56 @@ export function buildCloudinaryAssetDownloadUrl(item: { version: number | string
 /**
  * Maps raw Cloudinary resources into structured MediaTrack array
  */
-function mapResourcesToTracks(
+export function mapCloudinaryResourcesToTracks(
   resources: CloudinaryRawResource[],
-  category: AudioCategoryTab
+  subTab: SubTabKey
 ): MediaTrack[] {
   if (!Array.isArray(resources)) return [];
+  const cfg = CLOUDINARY_SUBTAB_CONFIG[subTab];
+  if (!cfg) return [];
+
   return resources.map((r, idx) => {
     const formattedTitle = formatCloudinaryTitle(r.public_id);
     const url = buildCloudinaryAssetUrl(r);
-    const subCategory = category === 'malayalam' || category === 'hindi' ? category : undefined;
-    const cat: 'song' | 'music' | 'commentary' = category === 'music' ? 'music' : 'song';
 
     return {
-      id: `cld_${category}_${r.asset_id || r.public_id || idx}`,
+      id: `cld_${subTab}_${r.asset_id || r.public_id || idx}`,
       title: formattedTitle || r.public_id,
       url,
-      category: cat,
-      subCategory,
+      category: cfg.category,
+      subCategory: subTab,
+      speaker: cfg.defaultSpeaker,
+      duration: r.duration,
     };
   });
 }
 
 /**
- * Synchronous cached tracks getter for instant zero-delay rendering
+ * Synchronous cached tracks getter for 0ms instant initial rendering
  */
-export function getCachedCloudinaryCategory(category: AudioCategoryTab): MediaTrack[] {
-  if (category === 'commentary') {
-    return MASTER_COMMENTARY_TRACKS;
-  }
-  const storageKey = AUDIO_STORAGE_KEYS[category as keyof typeof AUDIO_STORAGE_KEYS];
-  if (!storageKey) return [];
+export function getInitialSubTabTracks(subTab: SubTabKey): MediaTrack[] {
+  const storageKey = `cld_subtab_${subTab}_v3`;
   const cached = getJSON<MediaTrack[] | null>(storageKey, null);
   if (Array.isArray(cached) && cached.length > 0) {
     return cached;
   }
-  if (category === 'music') return MUSIC_DATA;
-  return SONGS_DATA.filter((s) => s.subCategory === category);
+  const cfg = CLOUDINARY_SUBTAB_CONFIG[subTab];
+  return cfg ? cfg.staticFallback : [];
 }
 
 /**
- * Fetches dynamic JSON for specified category tab from Cloudinary and caches locally
+ * Fetches dynamic Cloudinary JSON list for a sub-tab using primary tag with fallbacks
  */
-export async function fetchCloudinaryAudioCategory(
-  category: AudioCategoryTab,
+export async function fetchSubTabTracks(
+  subTab: SubTabKey,
   forceRefresh = false
 ): Promise<MediaTrack[]> {
-  if (category === 'commentary') {
-    return MASTER_COMMENTARY_TRACKS;
-  }
+  const cfg = CLOUDINARY_SUBTAB_CONFIG[subTab];
+  if (!cfg) return [];
 
-  const storageKey = AUDIO_STORAGE_KEYS[category as keyof typeof AUDIO_STORAGE_KEYS];
+  const storageKey = `cld_subtab_${subTab}_v3`;
+
+  // Return cache immediately if available and not force-refreshing
   if (!forceRefresh) {
     const cached = getJSON<MediaTrack[] | null>(storageKey, null);
     if (Array.isArray(cached) && cached.length > 0) {
@@ -149,35 +263,99 @@ export async function fetchCloudinaryAudioCategory(
     }
   }
 
-  try {
-    let endpoint = CLOUDINARY_TAG_ENDPOINTS[category as keyof typeof CLOUDINARY_TAG_ENDPOINTS];
-    let res = await fetch(endpoint);
+  const tagsToTry = [cfg.primary, ...cfg.fallbacks];
 
-    // Fallback for music tag if primary returned 404
-    if (!res.ok && category === 'music') {
-      res = await fetch(CLOUDINARY_TAG_ENDPOINTS.musicAlt);
-    }
+  for (const tag of tagsToTry) {
+    try {
+      const endpoint = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/${encodeURIComponent(tag)}.json`;
+      const res = await fetch(endpoint, { cache: forceRefresh ? 'no-cache' : 'default' });
+      if (res.ok) {
+        const data: CloudinaryListResponse = await res.json();
+        if (Array.isArray(data.resources) && data.resources.length > 0) {
+          const tracks = mapCloudinaryResourcesToTracks(data.resources, subTab);
 
-    if (!res.ok) {
-      throw new Error(`Failed to fetch Cloudinary tag list for ${category}: ${res.status}`);
-    }
+          // For 'others' commentary or 'ringtone_malayalam', merge static curated items if needed
+          let finalTracks = tracks;
+          if (subTab === 'others' && OTHERS_COMMENTARIES.length > 0) {
+            const existingUrls = new Set(tracks.map((t) => t.url));
+            const extra = OTHERS_COMMENTARIES.filter((o) => !existingUrls.has(o.url));
+            finalTracks = [...tracks, ...extra];
+          } else if (subTab === 'ringtone_malayalam' && MALAYALAM_RINGTONES.length > 0) {
+            const existingUrls = new Set(tracks.map((t) => t.url));
+            const extra = MALAYALAM_RINGTONES.filter((m) => !existingUrls.has(m.url));
+            finalTracks = [...tracks, ...extra];
+          }
 
-    const data: CloudinaryListResponse = await res.json();
-    if (Array.isArray(data.resources) && data.resources.length > 0) {
-      const tracks = mapResourcesToTracks(data.resources, category);
-      setJSON(storageKey, tracks);
-      return tracks;
+          setJSON(storageKey, finalTracks);
+          return finalTracks;
+        }
+      }
+    } catch (err) {
+      console.warn(`[AudioService] Error trying tag "${tag}" for ${subTab}:`, err);
     }
-  } catch (err) {
-    console.warn(`[AudioService] Cloudinary fetch error for ${category}:`, err);
   }
 
-  return getCachedCloudinaryCategory(category);
+  // Fallback to static initial dataset if Cloudinary tags returned empty or errored
+  const fallback = cfg.staticFallback;
+  if (fallback && fallback.length > 0) {
+    return fallback;
+  }
+  return [];
 }
 
 /**
- * Fetches all 3 categories (Malayalam Songs, Hindi Songs, Meditation Music) in parallel
+ * Pre-fetches all sub-tabs for a main tab in background
  */
+export async function prefetchMainTabAudio(
+  mainTab: MainMediaTab,
+  forceRefresh = false
+): Promise<Record<string, MediaTrack[]>> {
+  const subTabsByMain: Record<MainMediaTab, SubTabKey[]> = {
+    songs: ['hindi', 'malayalam', 'om_and_bhorg', 'own_tunes'],
+    commentary: ['sheeba_sister', 'sheeja_sister', 'others'],
+    music: ['meditation_music', 'function_music', 'own_music'],
+    ringtones: ['ringtone_hindi', 'ringtone_malayalam'],
+  };
+
+  const keys = subTabsByMain[mainTab] || [];
+  const results: Record<string, MediaTrack[]> = {};
+
+  await Promise.all(
+    keys.map(async (key) => {
+      try {
+        const tracks = await fetchSubTabTracks(key, forceRefresh);
+        results[key] = tracks;
+      } catch (err) {
+        results[key] = getInitialSubTabTracks(key);
+      }
+    })
+  );
+
+  return results;
+}
+
+// ── Legacy Compatibility Helpers ───────────────────────────────────────
+export const AUDIO_STORAGE_KEYS = {
+  malayalam: 'cld_subtab_malayalam_v3',
+  hindi: 'cld_subtab_hindi_v3',
+  music: 'cld_subtab_meditation_music_v3',
+} as const;
+
+export function getCachedCloudinaryCategory(category: AudioCategoryTab): MediaTrack[] {
+  switch (category) {
+    case 'malayalam':
+      return getInitialSubTabTracks('malayalam');
+    case 'hindi':
+      return getInitialSubTabTracks('hindi');
+    case 'music':
+      return getInitialSubTabTracks('meditation_music');
+    case 'commentary':
+      return MASTER_COMMENTARY_TRACKS;
+    default:
+      return [];
+  }
+}
+
 export async function fetchAllCloudinaryAudioTabs(
   forceRefresh = false
 ): Promise<{
@@ -186,17 +364,20 @@ export async function fetchAllCloudinaryAudioTabs(
   music: MediaTrack[];
   commentary: MediaTrack[];
 }> {
-  const [malayalam, hindi, music] = await Promise.all([
-    fetchCloudinaryAudioCategory('malayalam', forceRefresh),
-    fetchCloudinaryAudioCategory('hindi', forceRefresh),
-    fetchCloudinaryAudioCategory('music', forceRefresh),
+  const [malayalam, hindi, music, sheeba, sheeja, others] = await Promise.all([
+    fetchSubTabTracks('malayalam', forceRefresh),
+    fetchSubTabTracks('hindi', forceRefresh),
+    fetchSubTabTracks('meditation_music', forceRefresh),
+    fetchSubTabTracks('sheeba_sister', forceRefresh),
+    fetchSubTabTracks('sheeja_sister', forceRefresh),
+    fetchSubTabTracks('others', forceRefresh),
   ]);
 
   return {
     malayalam,
     hindi,
     music,
-    commentary: MASTER_COMMENTARY_TRACKS,
+    commentary: [...sheeba, ...sheeja, ...others],
   };
 }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import React, { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -28,37 +28,24 @@ import {
   RefreshCw,
   Search,
   X,
-  Disc,
 } from "lucide-react-native";
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from "@/lib/theme";
 import { useToast } from "@/components/ToastProvider";
+import { MediaTrack } from "@/constants/mediaTracks";
 import {
-  MediaTrack,
-  MASTER_COMMENTARY_TRACKS,
-  SHEEBA_SISTER_COMMENTARIES,
-  SHEEJA_SISTER_COMMENTARIES,
-  OTHERS_COMMENTARIES,
-  OM_DHWANI_TRACKS,
-  OM_AND_BHORG_TRACKS,
-  OWN_TUNES_TRACKS,
-  FUNCTION_MUSIC_TRACKS,
-  OWN_MUSIC_TRACKS,
-  HINDI_RINGTONES,
-  MALAYALAM_RINGTONES,
-} from "@/constants/mediaTracks";
-import {
-  fetchAllCloudinaryAudioTabs,
-  getCachedCloudinaryCategory,
+  MainMediaTab,
+  SubTabKey,
+  fetchSubTabTracks,
+  getInitialSubTabTracks,
+  prefetchMainTabAudio,
 } from "@/services/audioService";
 import { cleanMediaTitle, getCloudinaryDownloadUrl } from "@/services/mediaService";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { SoundwaveIndicator } from "@/components/SoundwaveIndicator";
 
-// ── Tab Type Definitions ───────────────────────────────────────────────
-export type MainMediaTab = "songs" | "commentary" | "music" | "ringtones";
-
+// ── Tab Hierarchy & Cloudinary-Connected Structure ────────────────────
 export interface SubTabItem {
-  id: string;
+  id: SubTabKey;
   label: string;
 }
 
@@ -102,38 +89,54 @@ export const MEDIA_TABS_CONFIG: Record<
     label: "Ringtones",
     icon: Volume2,
     subTabs: [
-      { id: "hindi", label: "Hindi" },
-      { id: "malayalam", label: "Malayalam" },
+      { id: "ringtone_hindi", label: "Hindi" },
+      { id: "ringtone_malayalam", label: "Malayalam" },
     ],
   },
 };
 
+const ALL_SUBTAB_KEYS: SubTabKey[] = [
+  "hindi",
+  "malayalam",
+  "om_and_bhorg",
+  "own_tunes",
+  "sheeba_sister",
+  "sheeja_sister",
+  "others",
+  "meditation_music",
+  "function_music",
+  "own_music",
+  "ringtone_hindi",
+  "ringtone_malayalam",
+];
+
+// Helper to initialize initial track dictionary synchronously for 0ms delay
+function buildInitialTrackMap(): Record<SubTabKey, MediaTrack[]> {
+  const map: Partial<Record<SubTabKey, MediaTrack[]>> = {};
+  for (const key of ALL_SUBTAB_KEYS) {
+    map[key] = getInitialSubTabTracks(key);
+  }
+  return map as Record<SubTabKey, MediaTrack[]>;
+}
+
 export default function MediaScreen() {
   const toast = useToast();
 
-  // Active Main & Sub Tab State
+  // Active Tab State
   const [mainTab, setMainTab] = useState<MainMediaTab>("songs");
-  const [subTab, setSubTab] = useState<string>("hindi");
+  const [subTab, setSubTab] = useState<SubTabKey>("hindi");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Track lists initialized synchronously from cache for instant 0ms rendering
-  const [malayalamTracks, setMalayalamTracks] = useState<MediaTrack[]>(() =>
-    getCachedCloudinaryCategory("malayalam")
-  );
-  const [hindiTracks, setHindiTracks] = useState<MediaTrack[]>(() =>
-    getCachedCloudinaryCategory("hindi")
-  );
-  const [musicTracks, setMusicTracks] = useState<MediaTrack[]>(() =>
-    getCachedCloudinaryCategory("music")
-  );
-  const [commentaryTracks, setCommentaryTracks] = useState<MediaTrack[]>(
-    MASTER_COMMENTARY_TRACKS
-  );
-
+  // SubTab Track Cache Map (Initialized synchronously from cache)
+  const [trackMap, setTrackMap] = useState<Record<SubTabKey, MediaTrack[]>>(buildInitialTrackMap);
+  const [loadingMap, setLoadingMap] = useState<Partial<Record<SubTabKey, boolean>>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const spinAnim = useRef(new Animated.Value(0)).current;
 
-  // Global Audio Player State (Uninterrupted across tab switches)
+  // Animation values
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const skeletonPulse = useRef(new Animated.Value(0.3)).current;
+
+  // Global Audio Player State (Completely persistent across tab switches)
   const [playingTrack, setPlayingTrack] = useState<MediaTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -142,7 +145,7 @@ export default function MediaScreen() {
   const [seekTarget, setSeekTarget] = useState<number | null>(null);
   const [audioFailed, setAudioFailed] = useState(false);
 
-  // Drag & scrub state for audio timeline
+  // Timeline scrub state
   const isScrubbingRef = useRef(false);
   const [isScrubbing, setIsScrubbing] = useState(false);
   const [scrubPos, setScrubPos] = useState(0);
@@ -154,24 +157,57 @@ export default function MediaScreen() {
     pageX: 0,
   });
 
-  // Load latest Cloudinary audio lists in background
+  // Start skeleton pulse animation
   useEffect(() => {
-    let isMounted = true;
-    fetchAllCloudinaryAudioTabs()
-      .then((data) => {
-        if (!isMounted) return;
-        if (data.malayalam.length > 0) setMalayalamTracks(data.malayalam);
-        if (data.hindi.length > 0) setHindiTracks(data.hindi);
-        if (data.music.length > 0) setMusicTracks(data.music);
-        if (data.commentary.length > 0) setCommentaryTracks(data.commentary);
-      })
-      .catch((err) => console.warn("[MediaScreen] Background sync error:", err));
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonPulse, {
+          toValue: 0.8,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(skeletonPulse, {
+          toValue: 0.3,
+          duration: 700,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [skeletonPulse]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  // Load Cloudinary tracks for the active sub-tab
+  const loadSubTabAudio = useCallback(
+    async (key: SubTabKey, force = false) => {
+      const existing = trackMap[key];
+      if (!existing || existing.length === 0) {
+        setLoadingMap((prev) => ({ ...prev, [key]: true }));
+      }
 
+      try {
+        const fetched = await fetchSubTabTracks(key, force);
+        if (Array.isArray(fetched) && fetched.length > 0) {
+          setTrackMap((prev) => ({ ...prev, [key]: fetched }));
+        }
+      } catch (err) {
+        console.warn(`[MediaScreen] Failed to load ${key}:`, err);
+      } finally {
+        setLoadingMap((prev) => ({ ...prev, [key]: false }));
+      }
+    },
+    [trackMap]
+  );
+
+  // Initial load: Fetch current subTab tracks and prefetch active main tab audio
+  useEffect(() => {
+    loadSubTabAudio(subTab);
+    prefetchMainTabAudio(mainTab);
+  }, [mainTab, subTab, loadSubTabAudio]);
+
+  // Pull-to-refresh handler: refreshes all sub-tabs of the active main tab
   const handleRefresh = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
@@ -185,12 +221,9 @@ export default function MediaScreen() {
     ).start();
 
     try {
-      const data = await fetchAllCloudinaryAudioTabs(true);
-      if (data.malayalam.length > 0) setMalayalamTracks(data.malayalam);
-      if (data.hindi.length > 0) setHindiTracks(data.hindi);
-      if (data.music.length > 0) setMusicTracks(data.music);
-      if (data.commentary.length > 0) setCommentaryTracks(data.commentary);
-      toast.show("Audio playlists refreshed", "success");
+      const updatedMap = await prefetchMainTabAudio(mainTab, true);
+      setTrackMap((prev) => ({ ...prev, ...updatedMap }));
+      toast.show("Audio playlist refreshed", "success");
     } catch {
       toast.show("Loaded cached audio files", "info");
     } finally {
@@ -202,15 +235,18 @@ export default function MediaScreen() {
   const handleMainTabSelect = (newMainTab: MainMediaTab) => {
     if (newMainTab === mainTab) return;
     setMainTab(newMainTab);
-    const firstSub = MEDIA_TABS_CONFIG[newMainTab].subTabs[0]?.id || "";
+    const firstSub = MEDIA_TABS_CONFIG[newMainTab].subTabs[0]?.id || "hindi";
     setSubTab(firstSub);
     setSearchQuery("");
+    loadSubTabAudio(firstSub);
+    prefetchMainTabAudio(newMainTab);
   };
 
-  const handleSubTabSelect = (newSubTab: string) => {
+  const handleSubTabSelect = (newSubTab: SubTabKey) => {
     if (newSubTab === subTab) return;
     setSubTab(newSubTab);
     setSearchQuery("");
+    loadSubTabAudio(newSubTab);
   };
 
   const handlePlay = (track: MediaTrack) => {
@@ -316,95 +352,20 @@ export default function MediaScreen() {
     setSeekTarget(target);
   };
 
-  // Resolve tracks for the active sub-tab
-  const activeSubTabTracks = useMemo((): MediaTrack[] => {
-    switch (mainTab) {
-      case "songs": {
-        if (subTab === "hindi") return hindiTracks;
-        if (subTab === "malayalam") return malayalamTracks;
-        if (subTab === "om_and_bhorg" || subTab === "om_dhwani") {
-          const cldOm = musicTracks.filter((t) =>
-            /omdhvani|om\s*dhwani|omkar|bhog|bhorg/i.test(t.title || t.url)
-          );
-          const list = [...OM_AND_BHORG_TRACKS];
-          cldOm.forEach((c) => {
-            if (!list.some((t) => t.url === c.url || t.title === c.title)) {
-              list.unshift(c);
-            }
-          });
-          return list;
-        }
-        if (subTab === "own_tunes") return OWN_TUNES_TRACKS;
-        return hindiTracks;
-      }
-      case "commentary": {
-        if (subTab === "sheeba_sister") {
-          const list = commentaryTracks.filter(
-            (t) =>
-              /sheeba/i.test(t.title) ||
-              /sheeba/i.test(t.url) ||
-              t.subCategory === "sheeba_sister" ||
-              t.speaker?.includes("Sheeba")
-          );
-          return list.length > 0 ? list : SHEEBA_SISTER_COMMENTARIES;
-        }
-        if (subTab === "sheeja_sister") {
-          const list = commentaryTracks.filter(
-            (t) =>
-              /sheeja/i.test(t.title) ||
-              /sheeja/i.test(t.url) ||
-              t.subCategory === "sheeja_sister" ||
-              t.speaker?.includes("Sheeja")
-          );
-          return list.length > 0 ? list : SHEEJA_SISTER_COMMENTARIES;
-        }
-        if (subTab === "others") {
-          const list = commentaryTracks.filter(
-            (t) =>
-              !/sheeba/i.test(t.title) &&
-              !/sheeba/i.test(t.url) &&
-              !/sheeja/i.test(t.title) &&
-              !/sheeja/i.test(t.url) &&
-              t.subCategory !== "sheeba_sister" &&
-              t.subCategory !== "sheeja_sister"
-          );
-          return list.length > 0 ? list : OTHERS_COMMENTARIES;
-        }
-        return SHEEBA_SISTER_COMMENTARIES;
-      }
-      case "music": {
-        if (subTab === "meditation_music" || subTab === "music") {
-          const list = musicTracks.filter(
-            (t) => !/omdhvani|om\s*dhwani/i.test(t.title || t.url)
-          );
-          return list.length > 0 ? list : musicTracks;
-        }
-        if (subTab === "function_music") {
-          return FUNCTION_MUSIC_TRACKS;
-        }
-        if (subTab === "own_music") return OWN_MUSIC_TRACKS;
-        return musicTracks;
-      }
-      case "ringtones": {
-        if (subTab === "hindi") return HINDI_RINGTONES;
-        if (subTab === "malayalam") return MALAYALAM_RINGTONES;
-        return HINDI_RINGTONES;
-      }
-      default:
-        return hindiTracks;
-    }
-  }, [mainTab, subTab, hindiTracks, malayalamTracks, musicTracks, commentaryTracks]);
+  // Get active subTab tracks with fallback
+  const rawSubTabTracks = trackMap[subTab] || getInitialSubTabTracks(subTab);
+  const isLoadingActiveSubTab = !!loadingMap[subTab] && rawSubTabTracks.length === 0;
 
   // Filter tracks by search query if entered
   const visibleTracks = useMemo(() => {
-    if (!searchQuery.trim()) return activeSubTabTracks;
+    if (!searchQuery.trim()) return rawSubTabTracks;
     const q = searchQuery.toLowerCase().trim();
-    return activeSubTabTracks.filter((t) => {
+    return rawSubTabTracks.filter((t) => {
       const title = cleanMediaTitle(t.title).toLowerCase();
       const speaker = (t.speaker || "").toLowerCase();
       return title.includes(q) || speaker.includes(q);
     });
-  }, [activeSubTabTracks, searchQuery]);
+  }, [rawSubTabTracks, searchQuery]);
 
   const handleNextTrack = () => {
     if (!playingTrack || visibleTracks.length === 0) return;
@@ -528,6 +489,7 @@ export default function MediaScreen() {
           >
             {currentSubTabs.map((sub) => {
               const isSubActive = subTab === sub.id;
+              const count = (trackMap[sub.id] || []).length;
 
               return (
                 <Pressable
@@ -548,6 +510,23 @@ export default function MediaScreen() {
                   >
                     {sub.label}
                   </Text>
+                  {count > 0 && (
+                    <View
+                      style={[
+                        styles.chipCountBadge,
+                        isSubActive && styles.chipCountBadgeActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipCountText,
+                          isSubActive && styles.chipCountTextActive,
+                        ]}
+                      >
+                        {count}
+                      </Text>
+                    </View>
+                  )}
                   {isSubActive && <View style={styles.subTabIndicator} />}
                 </Pressable>
               );
@@ -610,6 +589,7 @@ export default function MediaScreen() {
                     pressed && styles.seekBtnPressed,
                   ]}
                   onPress={handleSeekBackward}
+                  onLongPress={handlePreviousTrack}
                   accessibilityLabel="Rewind 10 seconds"
                 >
                   <RotateCcw
@@ -649,6 +629,7 @@ export default function MediaScreen() {
                     pressed && styles.seekBtnPressed,
                   ]}
                   onPress={handleSeekForward}
+                  onLongPress={handleNextTrack}
                   accessibilityLabel="Forward 10 seconds"
                 >
                   <RotateCw
@@ -707,9 +688,24 @@ export default function MediaScreen() {
           </View>
         )}
 
-        {/* ── [4. AUDIO TRACKS LIST] ── */}
+        {/* ── [4. AUDIO TRACKS LIST & SKELETONS] ── */}
         <View style={styles.listWrap}>
-          {visibleTracks.length === 0 ? (
+          {isLoadingActiveSubTab ? (
+            // Animated Skeleton Loader
+            [1, 2, 3, 4, 5].map((i) => (
+              <Animated.View
+                key={`skel_${i}`}
+                style={[styles.skeletonRow, { opacity: skeletonPulse }]}
+              >
+                <View style={styles.skeletonNumber} />
+                <View style={{ flex: 1, gap: 6 }}>
+                  <View style={styles.skeletonTitle} />
+                  <View style={styles.skeletonSub} />
+                </View>
+                <View style={styles.skeletonBtn} />
+              </Animated.View>
+            ))
+          ) : visibleTracks.length === 0 ? (
             <View style={styles.emptyState}>
               <Music color={COLORS.neutral[300]} size={36} strokeWidth={2} />
               <Text style={styles.emptyText}>No tracks found in this category</Text>
@@ -771,7 +767,7 @@ export default function MediaScreen() {
                         {track.speaker ||
                           MEDIA_TABS_CONFIG[mainTab].label.toUpperCase()}
                         {track.subCategory
-                          ? ` • ${track.subCategory.replace("_", " ").toUpperCase()}`
+                          ? ` • ${track.subCategory.replace(/_/g, " ").toUpperCase()}`
                           : ""}
                       </Text>
                     </View>
@@ -854,6 +850,8 @@ export default function MediaScreen() {
     </View>
   );
 }
+
+export { MediaScreen };
 
 const styles = StyleSheet.create({
   container: {
@@ -960,13 +958,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   subTabChip: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 7,
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     backgroundColor: "#ffffff",
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: "#e8dfd1",
     position: "relative",
+    gap: 6,
     ...SHADOWS.sm,
   },
   subTabChipActive: {
@@ -982,6 +983,23 @@ const styles = StyleSheet.create({
   },
   subTabChipTextActive: {
     fontFamily: FONTS.sansBold,
+    color: COLORS.primary[800],
+  },
+  chipCountBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: RADIUS.full,
+    backgroundColor: "#f5f0e8",
+  },
+  chipCountBadgeActive: {
+    backgroundColor: "rgba(212, 175, 55, 0.2)",
+  },
+  chipCountText: {
+    fontSize: 10,
+    fontFamily: FONTS.sansSemiBold,
+    color: COLORS.neutral[500],
+  },
+  chipCountTextActive: {
     color: COLORS.primary[800],
   },
   subTabIndicator: {
@@ -1269,6 +1287,43 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.95 }],
   },
 
+  // ── Skeleton Loader Rows ──
+  skeletonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ffffff",
+    borderRadius: RADIUS.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: "#f0ebe1",
+    gap: 10,
+  },
+  skeletonNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#e8dfd1",
+  },
+  skeletonTitle: {
+    height: 12,
+    width: "70%",
+    borderRadius: 6,
+    backgroundColor: "#e8dfd1",
+  },
+  skeletonSub: {
+    height: 9,
+    width: "40%",
+    borderRadius: 5,
+    backgroundColor: "#f0ebe1",
+  },
+  skeletonBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#e8dfd1",
+  },
+
   // ── Empty State ──
   emptyState: {
     alignItems: "center",
@@ -1292,5 +1347,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
-
-export { MediaScreen };

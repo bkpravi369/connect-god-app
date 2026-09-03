@@ -14,6 +14,9 @@ import {
   OWN_MUSIC_TRACKS,
   HINDI_RINGTONES,
   MALAYALAM_RINGTONES,
+  HINDI_SONGS_FALLBACK,
+  MALAYALAM_SONGS_FALLBACK,
+  MEDITATION_MUSIC_TRACKS,
   SONGS_DATA,
   MUSIC_DATA,
 } from '@/constants/mediaTracks';
@@ -74,15 +77,15 @@ export const CLOUDINARY_SUBTAB_CONFIG: Record<SubTabKey, SubTabTagConfig> = {
   // ── 1. MAIN TAB: "Songs" ──────────────────────────────────────────────
   hindi: {
     primary: 'song_hindi',
-    fallbacks: ['hindi songs', 'hindi'],
+    fallbacks: ['hindi', 'hindi songs'],
     category: 'song',
-    staticFallback: [],
+    staticFallback: HINDI_SONGS_FALLBACK,
   },
   malayalam: {
     primary: 'song_malayalam',
-    fallbacks: ['malayalam songs', 'malayalam'],
+    fallbacks: ['malayalam', 'malayalam songs'],
     category: 'song',
-    staticFallback: [],
+    staticFallback: MALAYALAM_SONGS_FALLBACK,
   },
   om_and_bhorg: {
     primary: 'om_bhorg',
@@ -122,9 +125,9 @@ export const CLOUDINARY_SUBTAB_CONFIG: Record<SubTabKey, SubTabTagConfig> = {
   // ── 3. MAIN TAB: "Music" ──────────────────────────────────────────────
   meditation_music: {
     primary: 'meditation_music',
-    fallbacks: ['Musics', 'music'],
+    fallbacks: ['music', 'Musics'],
     category: 'music',
-    staticFallback: MUSIC_DATA,
+    staticFallback: MEDITATION_MUSIC_TRACKS,
   },
   function_music: {
     primary: 'function_music',
@@ -153,6 +156,25 @@ export const CLOUDINARY_SUBTAB_CONFIG: Record<SubTabKey, SubTabTagConfig> = {
     staticFallback: MALAYALAM_RINGTONES,
   },
 };
+
+/**
+ * Resolves sub-tab key safely regardless of shorthand identifiers
+ */
+export function resolveSubTabKey(mainTab: MainMediaTab, subTabId: string): SubTabKey {
+  if (mainTab === 'ringtones') {
+    if (subTabId === 'hindi' || subTabId === 'ringtone_hindi') return 'ringtone_hindi';
+    if (subTabId === 'malayalam' || subTabId === 'ringtone_malayalam') return 'ringtone_malayalam';
+  }
+  if (mainTab === 'songs') {
+    if (subTabId === 'om_dhwani' || subTabId === 'om_and_bhorg' || subTabId === 'om_bhorg') {
+      return 'om_and_bhorg';
+    }
+  }
+  if (mainTab === 'music') {
+    if (subTabId === 'music' || subTabId === 'meditation_music') return 'meditation_music';
+  }
+  return subTabId as SubTabKey;
+}
 
 /**
  * Converts raw publicId or filename into clean, readable title case string

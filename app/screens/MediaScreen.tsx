@@ -179,10 +179,13 @@ export default function MediaScreen() {
     return () => pulseLoop.stop();
   }, [skeletonPulse]);
 
+  const trackMapRef = useRef(trackMap);
+  trackMapRef.current = trackMap;
+
   // Load Cloudinary tracks for the active sub-tab
   const loadSubTabAudio = useCallback(
     async (key: SubTabKey, force = false) => {
-      const existing = trackMap[key];
+      const existing = trackMapRef.current[key];
       if (!existing || existing.length === 0) {
         setLoadingMap((prev) => ({ ...prev, [key]: true }));
       }
@@ -198,13 +201,17 @@ export default function MediaScreen() {
         setLoadingMap((prev) => ({ ...prev, [key]: false }));
       }
     },
-    [trackMap]
+    []
   );
 
   // Initial load: Fetch current subTab tracks and prefetch active main tab audio
   useEffect(() => {
     loadSubTabAudio(subTab);
-    prefetchMainTabAudio(mainTab);
+    prefetchMainTabAudio(mainTab).then((data) => {
+      if (data && Object.keys(data).length > 0) {
+        setTrackMap((prev) => ({ ...prev, ...data }));
+      }
+    });
   }, [mainTab, subTab, loadSubTabAudio]);
 
   // Pull-to-refresh handler: refreshes all sub-tabs of the active main tab

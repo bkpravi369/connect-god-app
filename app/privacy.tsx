@@ -52,7 +52,7 @@ export default function PrivacyPolicyScreen() {
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Privacy Policy</Text>
-          <Text style={styles.headerSub}>സ്വകാര്യതാ നയം • Connect GOD</Text>
+          <Text style={styles.headerSub}>സ്വകാര്യതാ നയം • Connect GOD - BK Kozhikode Official App</Text>
         </View>
         <View style={styles.shieldIconWrap}>
           <ShieldCheck color="#D4AF37" size={22} strokeWidth={2.2} />

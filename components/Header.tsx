@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, View, Text } from 'react-native';
 import { Menu, Shield, Sparkles } from 'lucide-react-native';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
-import { APP_NAME, APP_LOGO } from '@/lib/constants';
+import { APP_NAME, APP_TAGLINE, APP_LOGO } from '@/lib/constants';
 import { BKSunEmblem } from '@/components/Logos';
 
 type Props = {
@@ -83,7 +83,7 @@ export function Header({ onMenuPress, onLogoPress, onAdminPress }: Props) {
           >
             <View style={styles.logoAura}>
               {logoFailed ? (
-                <BKSunEmblem size={24} />
+                <BKSunEmblem size={26} />
               ) : (
                 <Image
                   source={{ uri: APP_LOGO }}
@@ -93,8 +93,13 @@ export function Header({ onMenuPress, onLogoPress, onAdminPress }: Props) {
                 />
               )}
             </View>
-            <Text style={styles.emblemText}>{APP_NAME}</Text>
-            <Sparkles color="#D4AF37" size={13} strokeWidth={2.2} />
+            <View style={styles.brandTextWrap}>
+              <View style={styles.titleRow}>
+                <Text style={styles.emblemText}>{APP_NAME}</Text>
+                <Sparkles color="#D4AF37" size={11} strokeWidth={2.2} />
+              </View>
+              <Text style={styles.subtitleText}>{APP_TAGLINE}</Text>
+            </View>
           </Animated.View>
         </Pressable>
 
@@ -154,10 +159,10 @@ const styles = StyleSheet.create({
   emblemInner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 4.5,
-    borderRadius: RADIUS.full,
+    borderRadius: 16,
     backgroundColor: '#ffffff',
     borderWidth: 1.4,
     borderColor: '#D4AF37',
@@ -167,9 +172,9 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   logoAura: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#fffdfa',
@@ -180,14 +185,32 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   logoImg: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  brandTextWrap: {
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   emblemText: {
     fontFamily: FONTS.sansBold,
-    fontSize: 14.5,
+    fontSize: 14,
     color: COLORS.primary[800],
-    letterSpacing: 0.4,
+    letterSpacing: 0.3,
+    lineHeight: 18,
+  },
+  subtitleText: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 9.5,
+    color: '#854d0e',
+    letterSpacing: 0.25,
+    lineHeight: 12,
+    marginTop: 0.5,
   },
 });

@@ -1,7 +1,7 @@
 import { COLORS } from './theme';
 
 export const APP_NAME = 'Connect GOD';
-export const APP_TAGLINE = 'Spiritual Companion';
+export const APP_TAGLINE = 'BK Kozhikode Official App';
 export const ADMIN_PASSWORD = '1234';
 export const ADMIN_PIN = '1234';
 export const APP_LOGO = '/images/channel-logos/connect_god_logo.png';

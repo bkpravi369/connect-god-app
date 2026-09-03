@@ -1,0 +1,16 @@
+{
+  "short_name": "Connect GOD",
+  "name": "Connect GOD - BK Kozhikode Official App",
+  "description": "Connect GOD - BK Kozhikode Official App. Daily Murli, Varadan, Swaman, Traffic Control Chimes, and Meditation.",
+  "icons": [
+    {
+      "src": "/images/App_logo.png",
+      "type": "image/png",
+      "sizes": "192x192 512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#ffffff",
+  "theme_color": "#991b1b",
+  "display": "standalone"
+}

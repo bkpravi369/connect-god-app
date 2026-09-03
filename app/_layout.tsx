@@ -38,17 +38,22 @@ export default function RootLayout() {
   }, [fontsLoaded, fontError]);
 
   useEffect(() => {
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/service-worker.js')
-          .then((registration) => {
-            registration.update().catch(() => {});
-          })
-          .catch((err) => {
-            console.warn('[ServiceWorker] Registration failed:', err);
-          });
-      });
+    if (Platform.OS === 'web') {
+      if (typeof document !== 'undefined') {
+        document.title = 'Connect GOD - BK Kozhikode Official App';
+      }
+      if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker
+            .register('/service-worker.js')
+            .then((registration) => {
+              registration.update().catch(() => {});
+            })
+            .catch((err) => {
+              console.warn('[ServiceWorker] Registration failed:', err);
+            });
+        });
+      }
     }
   }, []);
 

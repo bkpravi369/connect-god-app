@@ -72,6 +72,16 @@ export const OWN_TUNES_TRACKS: MediaTrack[] = [
   { id: 'ot6', title: 'Kozhikode Center Special Tune', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/01_Letting_Go.mp3', category: 'song', subCategory: 'own_tunes' },
 ];
 
+// ── Music Sub-tracks: Function Music ───────────────────────────────────
+export const FUNCTION_MUSIC_TRACKS: MediaTrack[] = [
+  { id: 'fn_m1', title: 'Welcome Ceremony Instrumental', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/03_Playful_Work.mp3', category: 'music', subCategory: 'function_music' },
+  { id: 'fn_m2', title: 'Candle Lighting Theme Music', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/01-Rajyoga_Meditation_Music-1.mp3', category: 'music', subCategory: 'function_music' },
+  { id: 'fn_m3', title: 'Felicitation & Honor Fanfare', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/02-Rajyoga_Meditation_Music-2.mp3', category: 'music', subCategory: 'function_music' },
+  { id: 'fn_m4', title: 'Stage Inauguration Melody', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/01_Awakning.mp3', category: 'music', subCategory: 'function_music' },
+  { id: 'fn_m5', title: 'Blessings & Greetings Tune', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/02_Moving_On.mp3', category: 'music', subCategory: 'function_music' },
+  { id: 'fn_m6', title: 'Celebration Finale Symphony', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/Angel_Meditation_Instrumental_Music_Brahma_Kumaris_Raja_Yoga_Peace.mp3', category: 'music', subCategory: 'function_music' },
+];
+
 // ── Music Sub-tracks: Own Music ───────────────────────────────────────
 export const OWN_MUSIC_TRACKS: MediaTrack[] = [
   { id: 'om_m1', title: 'Deep Serenity Meditation', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/02-Rajyoga_Meditation_Music-2.mp3', category: 'music', subCategory: 'own_music' },
@@ -109,6 +119,7 @@ export const MASTER_MEDIA_DATA: MediaTrack[] = [
   ...MASTER_COMMENTARY_TRACKS,
   ...OM_DHWANI_TRACKS,
   ...OWN_TUNES_TRACKS,
+  ...FUNCTION_MUSIC_TRACKS,
   ...OWN_MUSIC_TRACKS,
   ...HINDI_RINGTONES,
   ...MALAYALAM_RINGTONES,

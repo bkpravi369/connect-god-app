@@ -40,6 +40,7 @@ import {
   OTHERS_COMMENTARIES,
   OM_DHWANI_TRACKS,
   OWN_TUNES_TRACKS,
+  FUNCTION_MUSIC_TRACKS,
   OWN_MUSIC_TRACKS,
   HINDI_RINGTONES,
   MALAYALAM_RINGTONES,
@@ -91,7 +92,8 @@ export const MEDIA_TABS_CONFIG: Record<
     label: "Music",
     icon: Sparkles,
     subTabs: [
-      { id: "music", label: "Music" },
+      { id: "meditation_music", label: "Meditation Music" },
+      { id: "function_music", label: "Function Music" },
       { id: "own_music", label: "Own Music" },
     ],
   },
@@ -370,11 +372,14 @@ export default function MediaScreen() {
         return SHEEBA_SISTER_COMMENTARIES;
       }
       case "music": {
-        if (subTab === "music") {
+        if (subTab === "meditation_music" || subTab === "music") {
           const list = musicTracks.filter(
             (t) => !/omdhvani|om\s*dhwani/i.test(t.title || t.url)
           );
           return list.length > 0 ? list : musicTracks;
+        }
+        if (subTab === "function_music") {
+          return FUNCTION_MUSIC_TRACKS;
         }
         if (subTab === "own_music") return OWN_MUSIC_TRACKS;
         return musicTracks;

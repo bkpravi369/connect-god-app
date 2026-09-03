@@ -28,6 +28,7 @@ import {
   RefreshCw,
   Search,
   X,
+  Repeat,
 } from "lucide-react-native";
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from "@/lib/theme";
 import { useToast } from "@/components/ToastProvider";
@@ -138,12 +139,28 @@ export default function MediaScreen() {
 
   // Global Audio Player State (Completely persistent across tab switches)
   const [playingTrack, setPlayingTrack] = useState<MediaTrack | null>(null);
+  const playingTrackRef = useRef<MediaTrack | null>(null);
+  playingTrackRef.current = playingTrack;
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [audioPos, setAudioPos] = useState(0);
   const [audioDur, setAudioDur] = useState(0);
   const [seekTarget, setSeekTarget] = useState<number | null>(null);
   const [audioFailed, setAudioFailed] = useState(false);
+
+  // Auto-play state: Default OFF to protect users' mobile data & Cloudinary bandwidth
+  const [autoPlay, setAutoPlay] = useState(false);
+  const autoPlayRef = useRef(false);
+  autoPlayRef.current = autoPlay;
+
+  // Sub-tab category tracking for strict isolation
+  const subTabRef = useRef<SubTabKey>(subTab);
+  subTabRef.current = subTab;
+
+  const [playingSubTab, setPlayingSubTab] = useState<SubTabKey>(subTab);
+  const playingSubTabRef = useRef<SubTabKey>(subTab);
+  playingSubTabRef.current = playingSubTab;
 
   // Timeline scrub state
   const isScrubbingRef = useRef(false);
@@ -265,7 +282,11 @@ export default function MediaScreen() {
     if (playingTrack?.id === track.id) {
       setIsPlaying((p) => !p);
     } else {
+      const trackSubTab = (track.subCategory as SubTabKey) || subTab;
+      setPlayingSubTab(trackSubTab);
+      playingSubTabRef.current = trackSubTab;
       setPlayingTrack(track);
+      playingTrackRef.current = track;
       setIsPlaying(true);
       setIsBuffering(true);
       setAudioPos(0);
@@ -374,23 +395,101 @@ export default function MediaScreen() {
     });
   }, [rawSubTabTracks, searchQuery]);
 
+  const visibleTracksRef = useRef(visibleTracks);
+  visibleTracksRef.current = visibleTracks;
+
+  // Category-isolated playlist resolver strictly for the playing track's sub-tab
+  const getPlayingSubTabPlaylist = useCallback((): MediaTrack[] => {
+    const currentTrack = playingTrackRef.current;
+    if (!currentTrack) return visibleTracksRef.current;
+
+    const currentSubTabKey =
+      (currentTrack.subCategory as SubTabKey) ||
+      playingSubTabRef.current ||
+      subTabRef.current;
+
+    if (
+      subTabRef.current === currentSubTabKey &&
+      visibleTracksRef.current.some((t) => t.id === currentTrack.id)
+    ) {
+      return visibleTracksRef.current;
+    }
+
+    return (
+      trackMapRef.current[currentSubTabKey] ||
+      getInitialSubTabTracks(currentSubTabKey)
+    );
+  }, []);
+
+  const handleToggleAutoPlay = () => {
+    setAutoPlay((prev) => {
+      const next = !prev;
+      toast.show(
+        next
+          ? "Auto-play: ON (Next track in list will play automatically)"
+          : "Auto-play: OFF (Playback stops at end of song)",
+        "info"
+      );
+      return next;
+    });
+  };
+
+  // ── Auto-Play onEnded Handler ──
+  const handleAudioEnded = () => {
+    setIsBuffering(false);
+
+    // 1. If Auto-Play is OFF: Simply stop playback at the end of the song
+    if (!autoPlayRef.current) {
+      setIsPlaying(false);
+      return;
+    }
+
+    const currentTrack = playingTrackRef.current;
+    if (!currentTrack) {
+      setIsPlaying(false);
+      return;
+    }
+
+    // 2. Safety & Category Isolation: Strictly selected from the same sub-tab playlist only
+    const playlist = getPlayingSubTabPlaylist();
+    const currentIdx = playlist.findIndex((t) => t.id === currentTrack.id);
+
+    // 3. Check if there is a next track in the currently active sub-tab list
+    if (currentIdx !== -1 && currentIdx < playlist.length - 1) {
+      const nextTrack = playlist[currentIdx + 1];
+      toast.show(
+        `Auto-playing next: ${cleanMediaTitle(nextTrack.title)}`,
+        "info"
+      );
+      handlePlay(nextTrack);
+    } else {
+      // 4. Last track in current list: Stop playback and reset to the beginning (do not loop to other sub-tabs)
+      setIsPlaying(false);
+      setAudioPos(0);
+      setSeekTarget(0);
+      toast.show("End of sub-tab playlist reached", "info");
+    }
+  };
+
   const handleNextTrack = () => {
-    if (!playingTrack || visibleTracks.length === 0) return;
-    const idx = visibleTracks.findIndex((t) => t.id === playingTrack.id);
-    if (idx !== -1 && idx < visibleTracks.length - 1) {
-      handlePlay(visibleTracks[idx + 1]);
-    } else if (visibleTracks.length > 0) {
-      handlePlay(visibleTracks[0]);
+    const playlist = getPlayingSubTabPlaylist();
+    if (!playingTrack || playlist.length === 0) return;
+    const idx = playlist.findIndex((t) => t.id === playingTrack.id);
+    if (idx !== -1 && idx < playlist.length - 1) {
+      handlePlay(playlist[idx + 1]);
+    } else if (playlist.length > 0) {
+      handlePlay(playlist[0]);
     }
   };
 
   const handlePreviousTrack = () => {
-    if (!playingTrack || visibleTracks.length === 0) return;
-    const idx = visibleTracks.findIndex((t) => t.id === playingTrack.id);
+    const playlist = getPlayingSubTabPlaylist();
+    if (!playingTrack || playlist.length === 0) return;
+    const idx = playlist.findIndex((t) => t.id === playingTrack.id);
     if (idx > 0) {
-      handlePlay(visibleTracks[idx - 1]);
-    } else if (visibleTracks.length > 0) {
-      handlePlay(visibleTracks[visibleTracks.length - 1]);
+      handlePlay(playlist[idx - 1]);
+    } else if (playlist.length > 0) {
+      handlePlay(playlist[playlist.length - 1]);
     }
   };
 
@@ -689,6 +788,58 @@ export default function MediaScreen() {
               </View>
               <View style={styles.timeRow}>
                 <Text style={styles.timeText}>{fmtTime(displayPos)}</Text>
+
+                {/* Subtle, Clean Auto-play Toggle Button */}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.autoPlayToggleBtn,
+                    autoPlay
+                      ? styles.autoPlayToggleBtnActive
+                      : styles.autoPlayToggleBtnInactive,
+                    pressed && styles.actionPressed,
+                  ]}
+                  onPress={handleToggleAutoPlay}
+                  hitSlop={8}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: autoPlay }}
+                  accessibilityLabel={`Auto-play next track: ${autoPlay ? "On" : "Off"}`}
+                >
+                  <Repeat
+                    size={11}
+                    color={autoPlay ? "#ffffff" : COLORS.primary[700]}
+                    strokeWidth={2.4}
+                  />
+                  <Text
+                    style={[
+                      styles.autoPlayToggleText,
+                      autoPlay
+                        ? styles.autoPlayToggleTextActive
+                        : styles.autoPlayToggleTextInactive,
+                    ]}
+                  >
+                    Auto-play
+                  </Text>
+                  <View
+                    style={[
+                      styles.autoPlayStatusBadge,
+                      autoPlay
+                        ? styles.autoPlayStatusBadgeActive
+                        : styles.autoPlayStatusBadgeInactive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.autoPlayStatusBadgeText,
+                        autoPlay
+                          ? styles.autoPlayStatusBadgeTextActive
+                          : styles.autoPlayStatusBadgeTextInactive,
+                      ]}
+                    >
+                      {autoPlay ? "ON" : "OFF"}
+                    </Text>
+                  </View>
+                </Pressable>
+
                 <Text style={styles.timeText}>{fmtTime(audioDur)}</Text>
               </View>
             </View>
@@ -840,10 +991,7 @@ export default function MediaScreen() {
             onTimeUpdate={setAudioPos}
             onDurationChange={setAudioDur}
             onBufferingChange={setIsBuffering}
-            onEnded={() => {
-              setIsPlaying(false);
-              setIsBuffering(false);
-            }}
+            onEnded={handleAudioEnded}
             onError={() => {
               setIsPlaying(false);
               setIsBuffering(false);
@@ -1186,13 +1334,69 @@ const styles = StyleSheet.create({
   },
   timeRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    marginTop: -2,
+    marginTop: 2,
   },
   timeText: {
     fontFamily: FONTS.sans,
     fontSize: 10,
     color: COLORS.neutral[400],
+  },
+  autoPlayToggleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+  },
+  autoPlayToggleBtnInactive: {
+    backgroundColor: "#FAF5EE",
+    borderColor: "rgba(212, 175, 55, 0.35)",
+  },
+  autoPlayToggleBtnActive: {
+    backgroundColor: COLORS.primary[700],
+    borderColor: "#D4AF37",
+    shadowColor: COLORS.primary[700],
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  autoPlayToggleText: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 9.5,
+    letterSpacing: 0.2,
+  },
+  autoPlayToggleTextInactive: {
+    color: COLORS.primary[900],
+  },
+  autoPlayToggleTextActive: {
+    color: "#ffffff",
+  },
+  autoPlayStatusBadge: {
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: RADIUS.full,
+  },
+  autoPlayStatusBadgeInactive: {
+    backgroundColor: "rgba(139, 0, 0, 0.08)",
+  },
+  autoPlayStatusBadgeActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+  },
+  autoPlayStatusBadgeText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 8,
+    letterSpacing: 0.3,
+  },
+  autoPlayStatusBadgeTextInactive: {
+    color: COLORS.primary[800],
+  },
+  autoPlayStatusBadgeTextActive: {
+    color: "#ffffff",
   },
 
   // ── Track List Rows ──

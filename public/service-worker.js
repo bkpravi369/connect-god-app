@@ -1,5 +1,5 @@
-// Connect GOD Service Worker - Cache Version v2
-const CACHE_NAME = 'connectgod-cache-v2';
+// Connect GOD Service Worker - Cache Version v3 (Instant Invalidation)
+const CACHE_NAME = 'connectgod-cache-v3';
 
 // Static assets to pre-cache on install
 const STATIC_ASSETS = [
@@ -10,7 +10,7 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  // Activate immediately without waiting for existing tabs to close
+  // Force active immediately without waiting for existing tabs to close
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -22,7 +22,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  // Delete all old caches that do not match CACHE_NAME
+  // Instantly purge all old caches that do not match CACHE_NAME
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
@@ -48,9 +48,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 1. STRICT NETWORK-FIRST / NETWORK-ONLY FOR DYNAMIC DATA (.json, /api/, data queries)
-  const isDataRequest =
+  // 1. STRICT NETWORK-FIRST FOR DYNAMIC DATA (.json, /api/, data queries, .js scripts)
+  const isDynamicOrCode =
     url.pathname.endsWith('.json') ||
+    url.pathname.endsWith('.js') ||
     url.pathname.startsWith('/api/') ||
     url.pathname.includes('varadanam') ||
     url.pathname.includes('podcast') ||
@@ -59,8 +60,8 @@ self.addEventListener('fetch', (event) => {
     url.searchParams.has('t') ||
     url.searchParams.has('v');
 
-  if (isDataRequest) {
-    // Network-First: Always fetch fresh from network if online
+  if (isDynamicOrCode) {
+    // Network-First: Always fetch fresh code & data from network
     event.respondWith(
       fetch(request, {
         cache: 'no-store',
@@ -79,8 +80,7 @@ self.addEventListener('fetch', (event) => {
           return networkResponse;
         })
         .catch(async () => {
-          // Offline fallback: only serve from cache if network is completely unavailable
-          console.warn('[SW] Network offline, serving fallback for data:', url.pathname);
+          // Offline fallback
           const cachedResponse = await caches.match(request);
           if (cachedResponse) {
             return cachedResponse;
@@ -94,7 +94,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. STALE-WHILE-REVALIDATE / CACHE-FIRST FOR STATIC ASSETS
+  // 2. STALE-WHILE-REVALIDATE FOR OTHER STATIC ASSETS (images, fonts)
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       const fetchPromise = fetch(request)

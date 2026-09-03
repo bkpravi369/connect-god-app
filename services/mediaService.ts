@@ -82,7 +82,7 @@ export function driveTracksToMeditationItems(tracks: MediaTrack[] = ALL_MEDIA_TR
     id: t.id,
     title: t.title,
     category: t.category,
-    subCategory: t.subCategory,
+    subCategory: t.subCategory as any,
     driveUrl: t.url,
     streamUrl: t.url,
     downloadUrl: getCloudinaryDownloadUrl(t.url),

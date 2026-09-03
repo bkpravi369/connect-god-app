@@ -346,7 +346,7 @@ export type SongSubCategory = 'all' | 'malayalam' | 'hindi' | 'others';
 export type MeditationItem = {
   id: string;
   title: string;
-  category: 'commentary' | 'music' | 'song';
+  category: 'commentary' | 'music' | 'song' | 'ringtone';
   subCategory?: 'malayalam' | 'hindi' | 'others';
   folderPath?: string;
   filename?: string;

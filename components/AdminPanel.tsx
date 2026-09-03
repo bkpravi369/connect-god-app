@@ -1196,7 +1196,7 @@ function MeditationAdmin({
 }) {
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
-  const [category, setCategory] = useState<'commentary' | 'music' | 'song'>('commentary');
+  const [category, setCategory] = useState<'commentary' | 'music' | 'song' | 'ringtone'>('commentary');
   const [driveUrl, setDriveUrl] = useState('');
 
   useEffect(() => {

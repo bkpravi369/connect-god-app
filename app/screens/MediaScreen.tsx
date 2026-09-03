@@ -182,9 +182,9 @@ export default function MediaScreen() {
   const trackMapRef = useRef(trackMap);
   trackMapRef.current = trackMap;
 
-  // Load Cloudinary tracks for the active sub-tab
+  // Load Cloudinary tracks for the active sub-tab with dynamic cache-busting
   const loadSubTabAudio = useCallback(
-    async (key: SubTabKey, force = false) => {
+    async (key: SubTabKey, force = true) => {
       const existing = trackMapRef.current[key];
       if (!existing || existing.length === 0) {
         setLoadingMap((prev) => ({ ...prev, [key]: true }));
@@ -192,7 +192,7 @@ export default function MediaScreen() {
 
       try {
         const fetched = await fetchSubTabTracks(key, force);
-        if (Array.isArray(fetched) && fetched.length > 0) {
+        if (Array.isArray(fetched)) {
           setTrackMap((prev) => ({ ...prev, [key]: fetched }));
         }
       } catch (err) {
@@ -206,8 +206,8 @@ export default function MediaScreen() {
 
   // Initial load: Fetch current subTab tracks and prefetch active main tab audio
   useEffect(() => {
-    loadSubTabAudio(subTab);
-    prefetchMainTabAudio(mainTab).then((data) => {
+    loadSubTabAudio(subTab, true);
+    prefetchMainTabAudio(mainTab, true).then((data) => {
       if (data && Object.keys(data).length > 0) {
         setTrackMap((prev) => ({ ...prev, ...data }));
       }
@@ -245,15 +245,15 @@ export default function MediaScreen() {
     const firstSub = MEDIA_TABS_CONFIG[newMainTab].subTabs[0]?.id || "hindi";
     setSubTab(firstSub);
     setSearchQuery("");
-    loadSubTabAudio(firstSub);
-    prefetchMainTabAudio(newMainTab);
+    loadSubTabAudio(firstSub, true);
+    prefetchMainTabAudio(newMainTab, true);
   };
 
   const handleSubTabSelect = (newSubTab: SubTabKey) => {
     if (newSubTab === subTab) return;
     setSubTab(newSubTab);
     setSearchQuery("");
-    loadSubTabAudio(newSubTab);
+    loadSubTabAudio(newSubTab, true);
   };
 
   const handlePlay = (track: MediaTrack) => {

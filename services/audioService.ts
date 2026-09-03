@@ -57,11 +57,11 @@ export interface StrictSubTabConfig {
 
 /**
  * STRICT 1-TO-1 EXACT TAG MAPPING
- * No loose fallbacks. No broad searches. No cross-category mixing.
+ * Queries only exact tags with cache-busting.
  */
 export const CLOUDINARY_EXACT_TAGS: Record<SubTabKey, StrictSubTabConfig> = {
   // [SONGS]
-  hindi: { tag: 'song_hindi', category: 'song' },
+  hindi: { tag: 'song_hindi', altTag: 'songs_hindi', category: 'song' },
   malayalam: { tag: 'song_malayalam', category: 'song' },
   om_and_bhorg: { tag: 'om_bhog', altTag: 'om_bhorg', category: 'song' },
   own_tunes: { tag: 'own_tunes', category: 'song' },
@@ -113,24 +113,40 @@ export function resolveSubTabKey(mainTab: MainMediaTab, subTabId: string): SubTa
 
 /**
  * Converts raw publicId or filename into clean, readable title case string
+ * Strips underscores, extensions (.mp3, mp3), bitrate tags (_320kbps, _128kbps),
+ * properly handles ordinals (1st Day, 2nd Day, 3rd Day, 4th Day), and preserves sacred numbers (108).
  */
 export function formatCloudinaryTitle(raw: string): string {
   if (!raw) return '';
   let name = raw.split('/').pop() || raw;
   name = name.replace(/\.(mp3|wav|m4a|aac|ogg|mpeg|flac)$/i, '');
-  // Remove leading numbers with separators e.g. '04-', '01_-_', '01_ ', '02. '
-  name = name.replace(/^[\d\s._-]+/i, '');
+  name = name.replace(/mp3$/i, '');
+  name = name.replace(/_320kbps$/i, '');
+  name = name.replace(/_128kbps$/i, '');
+
+  // Handle specific day commentary patterns: e.g. '01_1st_DAY' -> '1st Day', '04_DAY_COMMENTARY' -> '4th Day Commentary'
+  name = name.replace(/^0*1[._\-\s]+1st/i, '1st');
+  name = name.replace(/^0*2[._\-\s]+2nd/i, '2nd');
+  name = name.replace(/^0*3[._\-\s]+3rd/i, '3rd');
+  name = name.replace(/^0*4[._\-\s]+DAY/i, '4th Day');
+
+  // Strip leading track number prefixes (e.g. '04-Maanava' -> 'Maanava', '07-baba' -> 'baba'),
+  // but preserve significant 3-digit spiritual numbers like '108'
+  name = name.replace(/^0*(\d{1,2})[._\-\s]+(?=[A-Za-z])/i, '');
+
   // Replace dashes and underscores with spaces
   name = name.replace(/[_-]+/g, ' ');
   // Collapse duplicate whitespace
   name = name.replace(/\s+/g, ' ').trim();
-  // Capitalize each word properly
+
+  // Capitalize words properly while preserving BK and ordinals
   return name
     .split(' ')
     .map((w) => {
       if (!w) return '';
       const upper = w.toUpperCase();
       if (upper === 'BK' || upper === 'B.K') return 'BK';
+      if (/^\d+(?:st|nd|rd|th)$/i.test(w)) return w.toLowerCase();
       return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
     })
     .join(' ');
@@ -192,7 +208,7 @@ export function mapCloudinaryResourcesToTracks(
  * Never backfills with unrelated tracks.
  */
 export function getInitialSubTabTracks(subTab: SubTabKey): MediaTrack[] {
-  const storageKey = `cld_exact_v4_${subTab}`;
+  const storageKey = `cld_exact_v5_${subTab}`;
   const cached = getJSON<MediaTrack[] | null>(storageKey, null);
   if (Array.isArray(cached)) {
     return cached;
@@ -201,7 +217,7 @@ export function getInitialSubTabTracks(subTab: SubTabKey): MediaTrack[] {
 }
 
 /**
- * Queries ONLY the exact tag for the given sub-tab.
+ * Queries ONLY the exact tag for the given sub-tab with cache busting.
  * No fallbacks. No combining. No cross-contamination.
  */
 export async function fetchSubTabTracks(
@@ -211,7 +227,7 @@ export async function fetchSubTabTracks(
   const cfg = CLOUDINARY_EXACT_TAGS[subTab];
   if (!cfg) return [];
 
-  const storageKey = `cld_exact_v4_${subTab}`;
+  const storageKey = `cld_exact_v5_${subTab}`;
 
   if (!forceRefresh) {
     const cached = getJSON<MediaTrack[] | null>(storageKey, null);
@@ -220,13 +236,21 @@ export async function fetchSubTabTracks(
     }
   }
 
-  // Exact tags to check: primary tag, and if 404, only the specific alternative tag name
+  // Exact tags to check: primary tag, and if 404, only the specific alternative tag name (e.g. song_hindi -> songs_hindi)
   const tagsToCheck = cfg.altTag ? [cfg.tag, cfg.altTag] : [cfg.tag];
 
   for (const tag of tagsToCheck) {
     try {
-      const endpoint = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/${encodeURIComponent(tag)}.json`;
-      const res = await fetch(endpoint, { cache: forceRefresh ? 'no-cache' : 'default' });
+      const timestamp = Date.now();
+      const endpoint = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/${encodeURIComponent(tag)}.json?_cb=${timestamp}`;
+      const res = await fetch(endpoint, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+        },
+      });
+
       if (res.ok) {
         const data: CloudinaryListResponse = await res.json();
         if (Array.isArray(data.resources) && data.resources.length > 0) {
@@ -278,9 +302,9 @@ export async function prefetchMainTabAudio(
 
 // ── Legacy Compatibility Helpers ───────────────────────────────────────
 export const AUDIO_STORAGE_KEYS = {
-  malayalam: 'cld_exact_v4_malayalam',
-  hindi: 'cld_exact_v4_hindi',
-  music: 'cld_exact_v4_meditation_music',
+  malayalam: 'cld_exact_v5_malayalam',
+  hindi: 'cld_exact_v5_hindi',
+  music: 'cld_exact_v5_meditation_music',
 } as const;
 
 export function getCachedCloudinaryCategory(category: AudioCategoryTab): MediaTrack[] {

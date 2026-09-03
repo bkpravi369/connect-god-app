@@ -12,5 +12,12 @@
       "*.bkkozhikode.com",
       "*.vercel.app"
     ]
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_launcher_round",
+      "iconColor": "#991B1B",
+      "sound": "traffic_chime.mp3"
+    }
   }
 }

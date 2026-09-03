@@ -1,7 +1,7 @@
 {
   "name": "bolt-expo-starter",
   "main": "expo-router/entry",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "scripts": {
     "dev": "EXPO_NO_TELEMETRY=1 expo start",
@@ -13,6 +13,7 @@
   "dependencies": {
     "@capacitor/android": "^8.5.0",
     "@capacitor/core": "^8.5.0",
+    "@capacitor/local-notifications": "^8.3.1",
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/noto-sans-malayalam": "^0.4.2",
     "@expo/vector-icons": "^15.0.2",

@@ -32,6 +32,35 @@ function sanitizeHtmlContent(rawHtml) {
   return html.trim();
 }
 
+function extractVardanText(rawHtml) {
+  if (!rawHtml || typeof rawHtml !== 'string') return '';
+  const decoded = rawHtml
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+
+  const clean = decoded.replace(/<[^>]*>?/gm, ' ');
+  const regex =
+    /(?:വരദാനം|വരദാനം\s*:|വരദാനം\s*:-|वरदान|वरदान\s*:|वरदान\s*:-|Varadan|Blessing)\s*[:\-–]?\s*([\s\S]*?)(?=(?:വിശദീകരണം|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|സ്ലോഗൻ\s*:|സ്ലോഗന്\s*:-|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/i;
+  const match = clean.match(regex);
+  if (!match || !match[1]) return '';
+
+  let vardan = match[1]
+    .replace(/^[:\-–\s]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const sentenceMatch = vardan.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.।]?)/i);
+  if (sentenceMatch && sentenceMatch[1].trim().length > 15) {
+    vardan = sentenceMatch[1].trim();
+  }
+  return vardan;
+}
+
 function getTodayISTDateString() {
   const now = new Date();
   const utc = now.getTime() + now.getTimezoneOffset() * 60000;
@@ -101,12 +130,14 @@ export default async function handler(req, res) {
         const rawText = await response.text();
         if (rawText && rawText.length > 200) {
           const cleanedHtml = sanitizeHtmlContent(rawText);
+          const vardan = extractVardanText(rawText);
           return res.status(200).json({
             success: true,
             lang,
             date,
             sourceUrl: url,
             html: cleanedHtml,
+            vardan,
           });
         }
       }

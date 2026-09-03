@@ -115,16 +115,35 @@ function extractHindiSections(htmlOrText) {
 }
 
 function extractMalayalamSections(htmlOrText) {
-  const clean = htmlOrText.replace(/<[^>]*>?/gm, ' ');
+  if (!htmlOrText || typeof htmlOrText !== 'string') {
+    return { rawVaradan: '', rawSlogan: '', rawEssence: '' };
+  }
 
-  const varadanMatch = clean.match(/(?:വരദാനം[:\s]|വരദാനം\s*[-–:])\s*([\s\S]*?)(?=(?:വിശദീകരണം|സ്ലോഗൻ|മാതേശ്വരി|$))/i);
-  const rawVaradan = varadanMatch ? varadanMatch[1].replace(/\s+/g, ' ').trim() : '';
+  const decoded = htmlOrText
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
 
-  const sloganMatch = clean.match(/(?:സ്ലോഗൻ[:\s]|സ്ലോഗൻ\s*[-–:])\s*([\s\S]*?)(?=(?:മാതേശ്വരി|അവ്യക്ത|$))/i);
-  const rawSlogan = sloganMatch ? sloganMatch[1].replace(/\s+/g, ' ').trim() : '';
+  const clean = decoded.replace(/<[^>]*>?/gm, ' ');
+
+  const varadanMatch = clean.match(
+    /(?:വരദാനം[:\s]|വരദാനം\s*[-–:]|Varadan[:\s]|Blessing[:\s])\s*([\s\S]*?)(?=(?:വിശദീകരണം|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|$))/i
+  );
+  let rawVaradan = varadanMatch ? varadanMatch[1].replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim() : '';
+  const sentenceMatch = rawVaradan.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:)[.।]?)/i);
+  if (sentenceMatch && sentenceMatch[1].trim().length > 15) {
+    rawVaradan = sentenceMatch[1].trim();
+  }
+
+  const sloganMatch = clean.match(/(?:സ്ലോഗൻ[:\s]|സ്ലോഗൻ\s*[-–:]|സ്ലോഗന്[:\s]|സ്ലോഗന്\s*[-–:]|Slogan[:\s])\s*([\s\S]*?)(?=(?:മാതേശ്വരി|അവ്യക്ത|$))/i);
+  const rawSlogan = sloganMatch ? sloganMatch[1].replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim() : '';
 
   const essenceMatch = clean.match(/(?:സാരം[:\s]|സാരം\s*\(Essence\)[:\s])\s*([\s\S]*?)(?=(?:ചോദ്യം|ഗാനം|ബാബയുടെ മഹാവാക്യങ്ങൾ|$))/i);
-  const rawEssence = essenceMatch ? essenceMatch[1].replace(/\s+/g, ' ').trim() : '';
+  const rawEssence = essenceMatch ? essenceMatch[1].replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim() : '';
 
   return { rawVaradan, rawSlogan, rawEssence };
 }
@@ -186,33 +205,7 @@ export default async function handler(req, res) {
   let hiCleanHtml = '';
   let enCleanHtml = '';
 
-  // Check uploaded varadanam.json dataset
-  try {
-    const fs = await import('fs');
-    const path = await import('path');
-    const possiblePaths = [
-      path.join(process.cwd(), 'src', 'data', 'varadanam.json'),
-      path.join(process.cwd(), 'data', 'varadanam.json'),
-    ];
-    for (const p of possiblePaths) {
-      if (fs.existsSync(p)) {
-        const raw = fs.readFileSync(p, 'utf-8');
-        const list = JSON.parse(raw);
-        const match = list.find((item) => item.date === dateParts.isoDate);
-        if (match && match.vardan) {
-          varadanMl = match.vardan;
-          if (match.vardan.includes('ആകർഷണങ്ങളിൽ')) {
-            swamanMl = 'ഞാൻ സർവ്വ ആകർഷണങ്ങളിൽ നിന്നും മുക്തനായ പവിത്ര ആത്മാവാണ്.';
-          } else if (match.vardan.includes('ശക്തിസ്വരൂപ') || match.vardan.includes('സർവ്വശക്തിവാൻ')) {
-            swamanMl = 'ഞാൻ സർവ്വ ശക്തിമാനായ പരമാത്മാവിന്റെ മാസ്റ്റർ സർവ്വശക്തിവാൻ കുട്ടിയാണ്.';
-          }
-          break;
-        }
-      }
-    }
-  } catch (err) {
-    // ignore
-  }
+
 
   // Parallel Fetch from babamurli.com
   const headers = {

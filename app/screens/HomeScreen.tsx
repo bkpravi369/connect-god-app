@@ -17,27 +17,22 @@ import {
   ZOOM_CONFIG,
   ZoomConfig,
   Varadan,
-  Swaman,
   Announcement,
   Channel,
 } from '@/lib/constants';
 import { AlertBanner } from '@/components/AlertBanner';
 import { VaradanCard } from '@/components/VaradanCard';
 import { LiveZoomBanner } from '@/components/LiveZoomBanner';
-import { DailySwamanCard } from '@/components/DailySwamanCard';
 import { VideoCard } from '@/components/VideoCard';
 import { VideoPlayerModal, VideoPlayItem } from '@/components/VideoPlayerModal';
 import { ChannelSubPageModal } from '@/components/ChannelSubPageModal';
 import { ZoomJoinModal } from '@/components/ZoomJoinModal';
 import { useToast } from '@/components/ToastProvider';
 import type { AutoContentResult } from '@/lib/auto-content';
-
-import { syncDailyMurliData, DailyMurliSyncResult } from '@/services/murliService';
-import { getDailyVaradanamAndSwaman, fetchDynamicRemoteVaradanam } from '@/services/varadanamDataset';
+import { fetchDailyVardanFromMurli, FALLBACK_VARADAN_ML } from '@/services/vardanService';
 
 type Props = {
   varadan: Varadan;
-  swaman?: Swaman | null;
   announcement: Announcement;
   onMurliPress: () => void;
   autoContent?: AutoContentResult | null;
@@ -48,7 +43,6 @@ type Props = {
 
 export default function HomeScreen({
   varadan,
-  swaman,
   announcement,
   onMurliPress,
   autoContent,
@@ -60,40 +54,55 @@ export default function HomeScreen({
   const [zoomOpen, setZoomOpen] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<VideoPlayItem | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
-  const [syncedData, setSyncedData] = useState<DailyMurliSyncResult | null>(null);
-  const [blessingData, setBlessingData] = useState(() => getDailyVaradanamAndSwaman());
+  
+  // Live Vardan extraction state (Zero manual JSON dependency)
+  const [extractedVardan, setExtractedVardan] = useState<string>('');
+  const [isVardanLoading, setIsVardanLoading] = useState<boolean>(true);
 
-  // Instant local dataset resolution for today's IST date
-  const todayBlessing = blessingData;
-
-  // Sync today's live Varadanam & Swaman directly from in-project sync engine & remote JSON
+  // Fetch today's live Vardan directly from Murli HTML on mount
   useEffect(() => {
-    fetchDynamicRemoteVaradanam().then(() => {
-      setBlessingData(getDailyVaradanamAndSwaman());
-    });
-    syncDailyMurliData().then((res) => {
-      if (res && res.success) {
-        setSyncedData(res);
-      }
-    });
+    let isMounted = true;
+    setIsVardanLoading(true);
+
+    fetchDailyVardanFromMurli(false)
+      .then((vardanText) => {
+        if (isMounted && vardanText) {
+          setExtractedVardan(vardanText);
+        }
+      })
+      .catch((err) => {
+        console.warn('[HomeScreen] Vardan extraction warning:', err);
+      })
+      .finally(() => {
+        if (isMounted) setIsVardanLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleRefresh = () => {
-    fetchDynamicRemoteVaradanam().then(() => {
-      setBlessingData(getDailyVaradanamAndSwaman());
-    });
-    syncDailyMurliData(true).then((res) => {
-      if (res && res.success) {
-        setSyncedData(res);
-      }
-    });
+    setIsVardanLoading(true);
+    fetchDailyVardanFromMurli(true)
+      .then((vardanText) => {
+        if (vardanText) {
+          setExtractedVardan(vardanText);
+        }
+      })
+      .catch((err) => {
+        console.warn('[HomeScreen] Vardan refresh warning:', err);
+      })
+      .finally(() => {
+        setIsVardanLoading(false);
+      });
+
     if (onRefresh) onRefresh();
   };
 
-  // Staggered Divine Entrance Animations (50ms intervals, 400ms duration, 60 FPS GPU)
+  // Staggered Divine Entrance Animations
   const animVaradan = useRef(new Animated.Value(0)).current;
   const animZoom = useRef(new Animated.Value(0)).current;
-  const animSwaman = useRef(new Animated.Value(0)).current;
   const animGrid = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -108,10 +117,9 @@ export default function HomeScreen({
     Animated.stagger(50, [
       createTiming(animVaradan),
       createTiming(animZoom),
-      createTiming(animSwaman),
       createTiming(animGrid),
     ]).start();
-  }, [animVaradan, animZoom, animSwaman, animGrid]);
+  }, [animVaradan, animZoom, animGrid]);
 
   const makeAnimStyle = (anim: Animated.Value) => ({
     opacity: anim,
@@ -162,36 +170,14 @@ export default function HomeScreen({
   const featuredList = build2x2Videos(autoContent);
 
   const effectiveVaradan: Varadan = useMemo(() => {
-    const resolvedText =
-      syncedData?.heroData?.varadan ||
-      todayBlessing?.varadanText ||
-      varadan?.textMl ||
-      DEFAULT_VARADAN.textMl;
+    const resolvedText = extractedVardan || varadan?.textMl || FALLBACK_VARADAN_ML;
 
     return {
       ...varadan,
       textMl: resolvedText,
-      text: syncedData?.heroData?.varadan || todayBlessing?.varadanText || varadan?.text || DEFAULT_VARADAN.text,
+      text: resolvedText,
     };
-  }, [syncedData, todayBlessing, varadan]);
-
-  const effectiveSwaman: Swaman = useMemo(() => {
-    const resolvedSwamanMl =
-      syncedData?.heroData?.swaman ||
-      todayBlessing?.swamanText ||
-      (typeof swaman === 'string' ? swaman : swaman?.textMl) ||
-      'ഞാൻ സർവ്വ ശക്തിമാനായ പരമാത്മാവിന്റെ മാസ്റ്റർ സർവ്വശക്തിവാൻ കുട്ടിയാണ്.';
-
-    const resolvedSwamanEn =
-      todayBlessing?.swamanTextEn ||
-      (typeof swaman === 'object' && swaman ? swaman.textEn : '') ||
-      'I am the master almighty child of the Supreme Soul.';
-
-    return {
-      textMl: resolvedSwamanMl,
-      textEn: resolvedSwamanEn,
-    };
-  }, [syncedData, todayBlessing, swaman]);
+  }, [extractedVardan, varadan]);
 
   return (
     <ScrollView
@@ -210,13 +196,14 @@ export default function HomeScreen({
       {/* ── [Top] Announcement Bar: Scrolling Marquee ── */}
       <AlertBanner announcement={announcement} />
 
-      {/* ── [Card 1] Divine Gold / Parchment Varadan Card ─────────────── */}
+      {/* ── [Card 1] Divine Gold / Parchment Varadan Card (Pure Extracted Vardan) ─────────── */}
       <Animated.View style={makeAnimStyle(animVaradan)}>
         <VaradanCard
           varadan={effectiveVaradan}
           onReadFull={onMurliPress}
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
+          isLoading={isVardanLoading}
         />
       </Animated.View>
 
@@ -225,16 +212,6 @@ export default function HomeScreen({
         <LiveZoomBanner
           onPress={handleDirectZoom}
           zoomUrl={zoomConfig?.joinUrl || ZOOM_CONFIG.joinUrl}
-        />
-      </Animated.View>
-
-      {/* ── [Card 2] Premium Single-Line "ഇന്നത്തെ സ്വാമാനം" Card ────── */}
-      <Animated.View style={makeAnimStyle(animSwaman)}>
-        <DailySwamanCard
-          swaman={effectiveSwaman}
-          onPress={() => toast.show('ആത്മീയ സ്വാമാനം ഹൃദയത്തിൽ സ്ഥിരപ്പെടുത്തുക ✨', 'info')}
-          onRefresh={handleRefresh}
-          isRefreshing={isRefreshing}
         />
       </Animated.View>
 
@@ -250,31 +227,25 @@ export default function HomeScreen({
             <Text style={styles.sectionBadge}>2x2 LIVE HUB</Text>
           </View>
         </View>
-        <Text style={styles.sectionSub}>BK S Calicut • Supreme Light • BK Sheeba • BK Sheeja</Text>
 
         <View style={styles.grid2x2}>
-          {featuredList.map((v) => (
-            <View key={v.id} style={styles.gridCell}>
+          {featuredList.map((item) => (
+            <View key={item.id} style={styles.gridItem}>
               <VideoCard
-                title={v.title}
-                subtitle={v.subtitle}
-                thumbnail={v.thumbnail}
-                badge={v.badge}
-                badgeColor={v.badgeColor}
-                videoId={v.videoId}
-                channelLogo={v.channelLogo}
-                onPress={() =>
+                video={{
+                  id: item.id,
+                  title: item.title,
+                  thumbnailUrl: item.thumbnail,
+                  youtubeUrl: item.youtubeUrl,
+                  channelTitle: item.channelTitle,
+                  category: 'class',
+                }}
+                onPlay={() =>
                   setSelectedVideo({
-                    id: v.id,
-                    title: v.title,
-                    subtitle: v.subtitle,
-                    url: v.url,
-                    videoId: v.videoId,
-                    channelId: v.channelId,
-                    channelName: v.channelName || v.title,
-                    badge: v.badge,
-                    badgeColor: v.badgeColor,
-                    thumbnail: v.thumbnail,
+                    id: item.id,
+                    title: item.title,
+                    youtubeUrl: item.youtubeUrl,
+                    channelTitle: item.channelTitle,
                   })
                 }
               />
@@ -283,130 +254,85 @@ export default function HomeScreen({
         </View>
       </Animated.View>
 
-      <View style={{ height: 60 }} />
-
-      {/* In-App Video Playback Modal */}
+      {/* ── Modal Popups ── */}
       <VideoPlayerModal
-        visible={!!selectedVideo}
+        visible={Boolean(selectedVideo)}
         video={selectedVideo}
         onClose={() => setSelectedVideo(null)}
       />
 
-      {/* Channel Hub Sub-page Modal */}
       <ChannelSubPageModal
-        visible={!!selectedChannel}
+        visible={Boolean(selectedChannel)}
         channel={selectedChannel}
         onClose={() => setSelectedChannel(null)}
-        onPlayVideo={(v) => {
-          setSelectedChannel(null);
-          setSelectedVideo(v);
+        onPlayVideo={(video) => {
+          setSelectedVideo({
+            id: video.id,
+            title: video.title,
+            youtubeUrl: video.youtubeUrl,
+            channelTitle: video.channelTitle,
+          });
         }}
       />
 
-      {/* Zoom Join Modal */}
       <ZoomJoinModal
         visible={zoomOpen}
         onClose={() => setZoomOpen(false)}
         onJoin={handleZoomJoin}
+        meetingTopic={zoomConfig?.topic}
+        meetingTime={zoomConfig?.meetingTime}
       />
     </ScrollView>
   );
 }
 
-type FeaturedVideoItem = {
-  id: string;
-  title: string;
-  subtitle: string;
-  thumbnail: string;
-  badge: string;
-  badgeColor: string;
-  url: string;
-  videoId?: string;
-  channelId?: string;
-  channelName?: string;
-  channelLogo?: string;
-};
-
-function build2x2Videos(autoContent?: AutoContentResult | null): FeaturedVideoItem[] {
-  const defaultCalicut = FEATURED_VIDEOS[0];
-  const defaultPodcast = FEATURED_VIDEOS[1];
-  const defaultSheeba = FEATURED_VIDEOS[2];
-  const defaultSheeja = FEATURED_VIDEOS[3];
-
-  const calicut = autoContent?.liveVideo;
-  const podcast = autoContent?.podcastVideo;
-  const sheeba = autoContent?.sheebaVideo;
-  const sheeja = autoContent?.sheejaVideo;
-
-  return [
-    {
-      id: calicut?.videoId || defaultCalicut.id,
-      videoId: calicut?.videoId || defaultCalicut.videoId,
-      channelId: 'bks-calicut',
-      title: 'BK S Calicut Live',
-      subtitle: calicut?.title || defaultCalicut.subtitle,
-      thumbnail: calicut?.thumbnail || defaultCalicut.thumbnail,
-      badge: calicut?.badge || (calicut?.isLive ? 'LIVE' : defaultCalicut.badge),
-      badgeColor: calicut?.badgeColor || defaultCalicut.badgeColor,
-      channelName: 'BK S Calicut Live',
-      url: calicut?.url || defaultCalicut.url,
-    },
-    {
-      id: podcast?.videoId || defaultPodcast.id,
-      videoId: podcast?.videoId || defaultPodcast.videoId,
-      channelId: 'supreme-light',
-      title: 'Supreme Light Creations',
-      subtitle: podcast?.title || defaultPodcast.subtitle,
-      thumbnail: podcast?.thumbnail || defaultPodcast.thumbnail,
-      badge: podcast?.badge || defaultPodcast.badge,
-      badgeColor: podcast?.badgeColor || defaultPodcast.badgeColor,
-      channelName: 'Supreme Light Creations',
-      url: podcast?.url || defaultPodcast.url,
-    },
-    {
-      id: sheeba?.videoId || defaultSheeba.id,
-      videoId: sheeba?.videoId || defaultSheeba.videoId,
-      channelId: 'bk-sheeba',
-      title: 'BK Sheeba',
-      subtitle: sheeba?.title || defaultSheeba.subtitle,
-      thumbnail: sheeba?.thumbnail || defaultSheeba.thumbnail,
-      badge: sheeba?.badge || defaultSheeba.badge,
-      badgeColor: sheeba?.badgeColor || defaultSheeba.badgeColor,
-      channelName: 'BK Sheeba',
-      url: sheeba?.url || defaultSheeba.url,
-    },
-    {
-      id: sheeja?.videoId || defaultSheeja.id,
-      videoId: sheeja?.videoId || defaultSheeja.videoId,
-      channelId: 'UCvQFuOM38iAZD7ltMujOq-g',
-      title: 'BK Sheeja',
-      subtitle: sheeja?.title || defaultSheeja.subtitle,
-      thumbnail: sheeja?.thumbnail || defaultSheeja.thumbnail,
-      badge: sheeja?.badge || defaultSheeja.badge,
-      badgeColor: sheeja?.badgeColor || defaultSheeja.badgeColor,
-      channelName: 'BK Sheeja',
-      url: sheeja?.url || defaultSheeja.url || 'https://www.youtube.com/watch?v=tiKb43faieY',
-    },
-  ];
+function build2x2Videos(autoContent?: AutoContentResult | null) {
+  if (autoContent && autoContent.videos && autoContent.videos.length > 0) {
+    const list = autoContent.videos.slice(0, 4).map((v, i) => ({
+      id: v.id || `auto-${i}`,
+      title: v.title,
+      thumbnail: v.thumbnailUrl || (FEATURED_VIDEOS[i % FEATURED_VIDEOS.length]?.thumbnail ?? ''),
+      youtubeUrl: v.youtubeUrl || (FEATURED_VIDEOS[i % FEATURED_VIDEOS.length]?.youtubeUrl ?? ''),
+      channelTitle: v.channelTitle || 'BK Media',
+      channelId: v.channelId || 'bk_media',
+    }));
+    while (list.length < 4) {
+      const fallback = FEATURED_VIDEOS[list.length % FEATURED_VIDEOS.length];
+      list.push({
+        id: fallback.id,
+        title: fallback.title,
+        thumbnail: fallback.thumbnail,
+        youtubeUrl: fallback.youtubeUrl,
+        channelTitle: fallback.channelTitle,
+        channelId: fallback.channelId,
+      });
+    }
+    return list;
+  }
+  return FEATURED_VIDEOS.slice(0, 4);
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAF8F5', // Soft Pearl / Ivory Canvas
+    backgroundColor: COLORS.background,
   },
   content: {
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.sm,
-    paddingBottom: 80,
+    paddingBottom: SPACING.xxl,
+    gap: SPACING.md,
   },
   section: {
-    marginBottom: SPACING.md,
+    marginTop: 2,
+    gap: SPACING.sm,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 2,
+    marginBottom: 4,
   },
   titleWithIcon: {
     flexDirection: 'row',
@@ -414,45 +340,33 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   sectionTitle: {
-    fontFamily: FONTS.sansBold,
+    fontFamily: FONTS.interBold,
     fontSize: 16,
-    color: COLORS.neutral[900],
-    letterSpacing: 0.2,
+    color: COLORS.text,
+    letterSpacing: -0.2,
   },
   hubBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(254, 226, 226, 0.75)',
-    paddingHorizontal: 8,
+    backgroundColor: '#fee2e2',
+    paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: RADIUS.full,
-    borderWidth: 1,
-    borderColor: '#fecaca',
   },
   sectionBadge: {
-    fontFamily: FONTS.sansBold,
-    fontSize: 9.5,
+    fontFamily: FONTS.interBold,
+    fontSize: 10,
     color: '#dc2626',
     letterSpacing: 0.5,
   },
-  sectionSub: {
-    fontFamily: FONTS.sans,
-    fontSize: 11.5,
-    color: COLORS.neutral[500],
-    marginTop: 2,
-    marginBottom: SPACING.md,
-  },
-  // 2x2 Grid for the 4 YouTube channels
   grid2x2: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    gap: 10,
+    rowGap: 14,
   },
-  gridCell: {
-    width: '48.5%',
+  gridItem: {
+    width: '48.2%',
   },
 });
-
-export { HomeScreen };

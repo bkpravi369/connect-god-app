@@ -258,7 +258,6 @@ export default function App() {
           {tab === 'home' && (
             <HomeScreen
               varadan={effectiveVaradan}
-              swaman={swaman}
               announcement={announcement}
               onMurliPress={() => handleTabChange('murli')}
               autoContent={autoContent}

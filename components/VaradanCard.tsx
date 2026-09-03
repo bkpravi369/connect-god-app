@@ -11,6 +11,7 @@ type Props = {
   onReadFull?: () => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
+  isLoading?: boolean;
 };
 
 function ParchmentBackground({ width, height }: { width: number; height: number }) {
@@ -44,11 +45,36 @@ function ParchmentBackground({ width, height }: { width: number; height: number 
   );
 }
 
-export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing }: Props) {
+export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLoading }: Props) {
   const pulse = useRef(new Animated.Value(1)).current;
   const glowPulse = useRef(new Animated.Value(0.2)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
+  const skeletonPulse = useRef(new Animated.Value(0.35)).current;
   const [dims, setDims] = React.useState({ w: 320, h: 140 });
+
+  // Skeleton pulse animation
+  useEffect(() => {
+    if (isLoading) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonPulse, {
+            toValue: 0.85,
+            duration: 800,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(skeletonPulse, {
+            toValue: 0.35,
+            duration: 800,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [isLoading, skeletonPulse]);
 
   // Infinite subtle breathing golden aura glow
   useEffect(() => {
@@ -158,8 +184,16 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing }: Pr
           )}
         </View>
 
-        {/* Dynamic / Editable Blessing Text */}
-        <Text style={styles.body}>{blessingText}</Text>
+        {/* Dynamic / Editable Blessing Text or Loading Skeleton */}
+        {isLoading ? (
+          <View style={styles.skeletonContainer}>
+            <Animated.View style={[styles.skeletonLine, { width: '92%', opacity: skeletonPulse }]} />
+            <Animated.View style={[styles.skeletonLine, { width: '98%', opacity: skeletonPulse }]} />
+            <Animated.View style={[styles.skeletonLine, { width: '64%', opacity: skeletonPulse }]} />
+          </View>
+        ) : (
+          <Text style={styles.body}>{blessingText}</Text>
+        )}
 
         {/* Action Button: സമ്പൂർണ്ണ മുരളി വായിക്കുക (Official Portal) */}
         <Pressable
@@ -168,7 +202,9 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing }: Pr
           accessibilityLabel="Open Official Madhuban Murli Portal"
         >
           <BookOpen color="#92400e" size={14} strokeWidth={2.4} />
-          <Text style={styles.portalBtnText}>സമ്പൂർണ്ണ മുരളി വായിക്കുക</Text>
+          <Text style={styles.portalBtnText}>
+            {isLoading ? 'മുരളി ലോഡ് ചെയ്യുന്നു...' : 'സമ്പൂർണ്ണ മുരളി വായിക്കുക'}
+          </Text>
           <ExternalLink color="#92400e" size={13} strokeWidth={2.4} />
         </Pressable>
       </View>
@@ -261,5 +297,15 @@ const styles = StyleSheet.create({
   actionPressed: {
     opacity: 0.75,
     transform: [{ scale: 0.97 }],
+  },
+  skeletonContainer: {
+    gap: 8,
+    marginVertical: 8,
+    paddingVertical: 4,
+  },
+  skeletonLine: {
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#E6D7B8',
   },
 });

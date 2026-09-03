@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Image } from 'react-native';
 import Svg, { Circle, Path, G, RadialGradient, Stop, Defs } from 'react-native-svg';
 
 // ── Brahma Kumari Red Sun emblem ──────────────────────────────────────
@@ -178,8 +179,29 @@ export function BKSCalicutLogo({ size = 40 }: { size?: number }) {
   );
 }
 
+const CHANNEL_IMAGE_MAP: Record<string, string> = {
+  'bks-calicut': '/images/channel-logos/bks_calicut_logo.jpg',
+  'supreme-light': '/images/channel-logos/Supremelight_creation_logo_new.png',
+  'bk-sheeba': '/images/channel-logos/BK_sheeba_logo.png',
+  'bk-sheeja': '/images/channel-logos/BK_Sheeja_real.png',
+};
+
 // ── Dispatcher: get the right logo component by channel id ────────────
 export function ChannelLogo({ id, size = 40 }: { id: string; size?: number }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const logoUri = CHANNEL_IMAGE_MAP[id];
+
+  if (logoUri && !imgFailed) {
+    return (
+      <Image
+        source={{ uri: logoUri }}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        resizeMode="cover"
+        onError={() => setImgFailed(true)}
+      />
+    );
+  }
+
   switch (id) {
     case 'supreme-light': return <SupremeLightLogo size={size} />;
     case 'bk-sheeba': return <BKSheebaLogo size={size} />;

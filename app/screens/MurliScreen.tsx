@@ -22,6 +22,7 @@ import {
 } from 'lucide-react-native';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import { useToast } from '@/components/ToastProvider';
+import { getJSON, setJSON } from '@/lib/storage';
 import {
   DailyMurliSyncResult,
   getFormattedMurliDate,
@@ -31,6 +32,11 @@ import {
 import { MurliAudioPlayer } from '@/components/MurliAudioPlayer';
 
 export type MurliLanguage = 'ml' | 'hi' | 'en';
+
+const DEFAULT_MURLI_FONT_SIZE = 17;
+const MIN_MURLI_FONT_SIZE = 14;
+const MAX_MURLI_FONT_SIZE = 28;
+const MURLI_FONT_STORAGE_KEY = '@connectgod_murli_font_size';
 
 export function MurliScreen() {
   const toast = useToast();
@@ -49,6 +55,41 @@ export function MurliScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncedData, setSyncedData] = useState<DailyMurliSyncResult | null>(null);
   const spinAnim = useRef(new Animated.Value(0)).current;
+
+  // 1b. Font resize state scoped strictly to the Murli reading container (persisted)
+  const [fontSize, setFontSize] = useState<number>(() => {
+    const saved = getJSON<number | null>(MURLI_FONT_STORAGE_KEY, null);
+    if (typeof saved === 'number' && saved >= MIN_MURLI_FONT_SIZE && saved <= MAX_MURLI_FONT_SIZE) {
+      return saved;
+    }
+    return DEFAULT_MURLI_FONT_SIZE;
+  });
+
+  const handleDecreaseFont = () => {
+    setFontSize((prev) => {
+      const next = Math.max(MIN_MURLI_FONT_SIZE, Math.round((prev - 1.5) * 10) / 10);
+      setJSON(MURLI_FONT_STORAGE_KEY, next);
+      toast.show(`Text size: ${Math.round((next / DEFAULT_MURLI_FONT_SIZE) * 100)}%`, 'info');
+      return next;
+    });
+  };
+
+  const handleIncreaseFont = () => {
+    setFontSize((prev) => {
+      const next = Math.min(MAX_MURLI_FONT_SIZE, Math.round((prev + 1.5) * 10) / 10);
+      setJSON(MURLI_FONT_STORAGE_KEY, next);
+      toast.show(`Text size: ${Math.round((next / DEFAULT_MURLI_FONT_SIZE) * 100)}%`, 'info');
+      return next;
+    });
+  };
+
+  const handleResetFont = () => {
+    setFontSize(DEFAULT_MURLI_FONT_SIZE);
+    setJSON(MURLI_FONT_STORAGE_KEY, DEFAULT_MURLI_FONT_SIZE);
+    toast.show('Text size reset (100%)', 'info');
+  };
+
+  const fontPercent = Math.round((fontSize / DEFAULT_MURLI_FONT_SIZE) * 100);
 
   // 2. Sync today's live Murli directly on mount
   useEffect(() => {
@@ -310,33 +351,128 @@ export function MurliScreen() {
                   {selectedLang.toUpperCase()} • {formattedDate}
                 </Text>
               </View>
-              <Pressable
-                style={styles.openExternalIconBtn}
-                onPress={handleOpenHtml}
-                hitSlop={6}
-                accessibilityLabel="Open in new tab"
-              >
-                <ExternalLink color={COLORS.primary[700]} size={13} strokeWidth={2.2} />
-              </Pressable>
+
+              <View style={styles.headerControlsRight}>
+                {/* Font Resize (Zoom In / Zoom Out) Controls */}
+                <View style={styles.fontResizeControls}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.fontBtn,
+                      fontSize <= MIN_MURLI_FONT_SIZE && styles.fontBtnDisabled,
+                      pressed && styles.fontBtnPressed,
+                    ]}
+                    onPress={handleDecreaseFont}
+                    disabled={fontSize <= MIN_MURLI_FONT_SIZE}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="Decrease font size"
+                  >
+                    <Text
+                      style={[
+                        styles.fontBtnText,
+                        fontSize <= MIN_MURLI_FONT_SIZE && styles.fontBtnTextDisabled,
+                      ]}
+                    >
+                      A-
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.fontSizeResetBtn,
+                      fontSize === DEFAULT_MURLI_FONT_SIZE && styles.fontSizeResetBtnActive,
+                      pressed && styles.fontBtnPressed,
+                    ]}
+                    onPress={handleResetFont}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Current font size ${fontPercent} percent. Tap to reset to 100 percent.`}
+                  >
+                    <Text
+                      style={[
+                        styles.fontSizeResetText,
+                        fontSize === DEFAULT_MURLI_FONT_SIZE && styles.fontSizeResetTextActive,
+                      ]}
+                    >
+                      {fontPercent}%
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.fontBtn,
+                      fontSize >= MAX_MURLI_FONT_SIZE && styles.fontBtnDisabled,
+                      pressed && styles.fontBtnPressed,
+                    ]}
+                    onPress={handleIncreaseFont}
+                    disabled={fontSize >= MAX_MURLI_FONT_SIZE}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="Increase font size"
+                  >
+                    <Text
+                      style={[
+                        styles.fontBtnText,
+                        fontSize >= MAX_MURLI_FONT_SIZE && styles.fontBtnTextDisabled,
+                      ]}
+                    >
+                      A+
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <Pressable
+                  style={styles.openExternalIconBtn}
+                  onPress={handleOpenHtml}
+                  hitSlop={6}
+                  accessibilityLabel="Open in new tab"
+                >
+                  <ExternalLink color={COLORS.primary[700]} size={13} strokeWidth={2.2} />
+                </Pressable>
+              </View>
             </View>
 
             {Platform.OS === 'web' ? (
-              <div
-                style={{
-                  fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
-                  fontSize: '16px',
-                  lineHeight: 1.8,
-                  color: '#2d3748',
-                  maxWidth: '100%',
-                  overflowX: 'hidden',
-                  wordBreak: 'break-word',
-                  overflowWrap: 'break-word',
-                  padding: '8px 4px',
-                }}
-                dangerouslySetInnerHTML={{ __html: cleanedHtmlText }}
-              />
+              <>
+                <style>{`
+                  .murli-html-container {
+                    font-size: ${fontSize}px !important;
+                    line-height: 1.85 !important;
+                  }
+                  .murli-html-container p,
+                  .murli-html-container div,
+                  .murli-html-container span,
+                  .murli-html-container font,
+                  .murli-html-container td,
+                  .murli-html-container th,
+                  .murli-html-container li {
+                    font-size: inherit !important;
+                    line-height: inherit !important;
+                  }
+                `}</style>
+                <div
+                  className="murli-html-container"
+                  style={{
+                    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+                    fontSize: `${fontSize}px`,
+                    lineHeight: 1.85,
+                    color: '#2d3748',
+                    maxWidth: '100%',
+                    overflowX: 'hidden',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
+                    padding: '8px 4px',
+                  }}
+                  dangerouslySetInnerHTML={{ __html: cleanedHtmlText }}
+                />
+              </>
             ) : (
-              <Text style={styles.nativeTextFallback}>
+              <Text
+                style={[
+                  styles.nativeTextFallback,
+                  { fontSize, lineHeight: Math.round(fontSize * 1.7) },
+                ]}
+              >
                 {cleanedHtmlText.replace(/<[^>]*>?/gm, ' ')}
               </Text>
             )}
@@ -580,6 +716,63 @@ const styles = StyleSheet.create({
     padding: 4,
     borderRadius: RADIUS.sm,
     backgroundColor: COLORS.primary[50],
+  },
+  headerControlsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fontResizeControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FAF5EE',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.35)',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+  },
+  fontBtn: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fontBtnDisabled: {
+    opacity: 0.32,
+  },
+  fontBtnPressed: {
+    opacity: 0.65,
+    backgroundColor: 'rgba(212, 175, 55, 0.2)',
+  },
+  fontBtnText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 11,
+    color: COLORS.primary[800],
+    letterSpacing: 0.2,
+  },
+  fontBtnTextDisabled: {
+    color: COLORS.neutral[400],
+  },
+  fontSizeResetBtn: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+    backgroundColor: 'rgba(212, 175, 55, 0.15)',
+    marginHorizontal: 1,
+  },
+  fontSizeResetBtnActive: {
+    backgroundColor: 'rgba(212, 175, 55, 0.28)',
+  },
+  fontSizeResetText: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 9.5,
+    color: COLORS.primary[900],
+  },
+  fontSizeResetTextActive: {
+    color: COLORS.primary[800],
+    fontFamily: FONTS.sansBold,
   },
   nativeTextFallback: {
     fontFamily: FONTS.sans,

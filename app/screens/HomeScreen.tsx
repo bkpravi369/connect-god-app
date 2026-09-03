@@ -32,7 +32,7 @@ import type { AutoContentResult } from '@/lib/auto-content';
 import { fetchDailyVardanFromMurli, FALLBACK_VARADAN_ML } from '@/services/vardanService';
 
 type Props = {
-  varadan: Varadan;
+  varadan?: Varadan | null;
   announcement: Announcement;
   onMurliPress: () => void;
   autoContent?: AutoContentResult | null;
@@ -66,8 +66,8 @@ export default function HomeScreen({
 
     fetchDailyVardanFromMurli(false)
       .then((vardanText) => {
-        if (isMounted && vardanText) {
-          setExtractedVardan(vardanText);
+        if (isMounted && vardanText && typeof vardanText === 'string') {
+          setExtractedVardan(vardanText.trim());
         }
       })
       .catch((err) => {
@@ -86,8 +86,8 @@ export default function HomeScreen({
     setIsVardanLoading(true);
     fetchDailyVardanFromMurli(true)
       .then((vardanText) => {
-        if (vardanText) {
-          setExtractedVardan(vardanText);
+        if (vardanText && typeof vardanText === 'string') {
+          setExtractedVardan(vardanText.trim());
         }
       })
       .catch((err) => {
@@ -100,7 +100,7 @@ export default function HomeScreen({
     if (onRefresh) onRefresh();
   };
 
-  // Staggered Divine Entrance Animations
+  // Staggered Divine Entrance Animations with safe non-native driver fallback
   const animVaradan = useRef(new Animated.Value(0)).current;
   const animZoom = useRef(new Animated.Value(0)).current;
   const animGrid = useRef(new Animated.Value(0)).current;
@@ -111,7 +111,7 @@ export default function HomeScreen({
         toValue: 1,
         duration: 400,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
+        useNativeDriver: false,
       });
 
     Animated.stagger(50, [
@@ -140,7 +140,7 @@ export default function HomeScreen({
     }
     const supported = await Linking.canOpenURL(url).catch(() => false);
     if (supported) {
-      await Linking.openURL(url);
+      await Linking.openURL(url).catch(() => {});
     } else if (fallbackMsg) {
       toast.show(fallbackMsg, 'info');
     }
@@ -167,15 +167,18 @@ export default function HomeScreen({
     await openUrl(targetUrl, 'Zoom app not available on this device');
   };
 
-  const featuredList = build2x2Videos(autoContent);
+  const featuredList = useMemo(() => build2x2Videos(autoContent), [autoContent]);
 
   const effectiveVaradan: Varadan = useMemo(() => {
-    const resolvedText = extractedVardan || varadan?.textMl || FALLBACK_VARADAN_ML;
+    const resolvedText =
+      (extractedVardan && extractedVardan.trim().length > 15 ? extractedVardan : '') ||
+      (typeof varadan === 'string' ? varadan : varadan?.textMl || varadan?.text || '') ||
+      FALLBACK_VARADAN_ML;
 
     return {
-      ...varadan,
       textMl: resolvedText,
       text: resolvedText,
+      audioUrl: (typeof varadan === 'object' && varadan?.audioUrl) || '',
     };
   }, [extractedVardan, varadan]);
 
@@ -203,7 +206,7 @@ export default function HomeScreen({
           onReadFull={onMurliPress}
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
-          isLoading={isVardanLoading}
+          isLoading={isVardanLoading && !extractedVardan}
         />
       </Animated.View>
 
@@ -232,20 +235,24 @@ export default function HomeScreen({
           {featuredList.map((item) => (
             <View key={item.id} style={styles.gridItem}>
               <VideoCard
-                video={{
-                  id: item.id,
-                  title: item.title,
-                  thumbnailUrl: item.thumbnail,
-                  youtubeUrl: item.youtubeUrl,
-                  channelTitle: item.channelTitle,
-                  category: 'class',
-                }}
-                onPlay={() =>
+                title={item.title}
+                subtitle={item.subtitle}
+                thumbnail={item.thumbnail}
+                badge={item.badge}
+                badgeColor={item.badgeColor}
+                videoId={item.videoId}
+                onPress={() =>
                   setSelectedVideo({
                     id: item.id,
                     title: item.title,
-                    youtubeUrl: item.youtubeUrl,
-                    channelTitle: item.channelTitle,
+                    subtitle: item.subtitle,
+                    url: item.url,
+                    videoId: item.videoId,
+                    channelId: item.channelId,
+                    channelName: item.channelName,
+                    badge: item.badge,
+                    badgeColor: item.badgeColor,
+                    thumbnail: item.thumbnail,
                   })
                 }
               />
@@ -269,8 +276,14 @@ export default function HomeScreen({
           setSelectedVideo({
             id: video.id,
             title: video.title,
-            youtubeUrl: video.youtubeUrl,
-            channelTitle: video.channelTitle,
+            subtitle: video.subtitle,
+            url: video.url,
+            videoId: video.videoId,
+            channelId: video.channelId,
+            channelName: video.channelName,
+            badge: video.badge,
+            badgeColor: video.badgeColor,
+            thumbnail: video.thumbnail,
           });
         }}
       />
@@ -286,30 +299,119 @@ export default function HomeScreen({
   );
 }
 
-function build2x2Videos(autoContent?: AutoContentResult | null) {
-  if (autoContent && autoContent.videos && autoContent.videos.length > 0) {
-    const list = autoContent.videos.slice(0, 4).map((v, i) => ({
-      id: v.id || `auto-${i}`,
-      title: v.title,
-      thumbnail: v.thumbnailUrl || (FEATURED_VIDEOS[i % FEATURED_VIDEOS.length]?.thumbnail ?? ''),
-      youtubeUrl: v.youtubeUrl || (FEATURED_VIDEOS[i % FEATURED_VIDEOS.length]?.youtubeUrl ?? ''),
-      channelTitle: v.channelTitle || 'BK Media',
-      channelId: v.channelId || 'bk_media',
-    }));
-    while (list.length < 4) {
-      const fallback = FEATURED_VIDEOS[list.length % FEATURED_VIDEOS.length];
-      list.push({
-        id: fallback.id,
-        title: fallback.title,
-        thumbnail: fallback.thumbnail,
-        youtubeUrl: fallback.youtubeUrl,
-        channelTitle: fallback.channelTitle,
-        channelId: fallback.channelId,
-      });
-    }
-    return list;
-  }
-  return FEATURED_VIDEOS.slice(0, 4);
+type FeaturedVideoItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  thumbnail: string;
+  badge: string;
+  badgeColor: string;
+  url: string;
+  videoId?: string;
+  channelId?: string;
+  channelName?: string;
+};
+
+function build2x2Videos(autoContent?: AutoContentResult | null): FeaturedVideoItem[] {
+  const defaultCalicut = FEATURED_VIDEOS[0] || {
+    id: 'calicut',
+    videoId: '04y26_09oU0',
+    title: 'BK S Calicut Live',
+    subtitle: 'Daily Classes & Live Streams',
+    thumbnail: 'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80',
+    badge: 'LIVE',
+    badgeColor: '#dc2626',
+    url: 'https://www.youtube.com/@BKSCalicutLive',
+  };
+
+  const defaultPodcast = FEATURED_VIDEOS[1] || {
+    id: 'podcast',
+    videoId: 'c_Kk1bLgKxQ',
+    title: 'Supreme Light Creations',
+    subtitle: 'Meditation & Creative Videos',
+    thumbnail: 'https://images.unsplash.com/photo-1518241353330-0f7941c2d9b5?w=600&q=80',
+    badge: 'NEW',
+    badgeColor: '#ea580c',
+    url: 'https://www.youtube.com/@SupremeLightCreations',
+  };
+
+  const defaultSheeba = FEATURED_VIDEOS[2] || {
+    id: 'sheeba',
+    videoId: '93fK3p1aLwY',
+    title: 'BK Sheeba',
+    subtitle: 'Spiritual Classes & Chintan',
+    thumbnail: 'https://images.unsplash.com/photo-1545205597-3d9d02c29597?w=600&q=80',
+    badge: 'CLASS',
+    badgeColor: '#15803d',
+    url: 'https://www.youtube.com/@BKSheeba',
+  };
+
+  const defaultSheeja = FEATURED_VIDEOS[3] || {
+    id: 'sheeja',
+    videoId: 'tiKb43faieY',
+    title: 'BK Sheeja',
+    subtitle: 'Murli Chintan & Classes',
+    thumbnail: 'https://images.unsplash.com/photo-1528715471579-d1bcf0ba5e83?w=600&q=80',
+    badge: 'CLASS',
+    badgeColor: '#0284c7',
+    url: 'https://www.youtube.com/watch?v=tiKb43faieY',
+  };
+
+  const calicut = autoContent?.liveVideo;
+  const podcast = autoContent?.podcastVideo;
+  const sheeba = autoContent?.sheebaVideo;
+  const sheeja = autoContent?.sheejaVideo;
+
+  return [
+    {
+      id: calicut?.videoId || defaultCalicut.id,
+      videoId: calicut?.videoId || (defaultCalicut as any).videoId,
+      channelId: 'bks-calicut',
+      title: 'BK S Calicut Live',
+      subtitle: calicut?.title || (defaultCalicut as any).subtitle || 'Daily Classes & Live Streams',
+      thumbnail: calicut?.thumbnail || defaultCalicut.thumbnail,
+      badge: calicut?.badge || (calicut?.isLive ? 'LIVE' : (defaultCalicut as any).badge || 'LIVE'),
+      badgeColor: calicut?.badgeColor || (defaultCalicut as any).badgeColor || '#dc2626',
+      channelName: 'BK S Calicut Live',
+      url: calicut?.url || (defaultCalicut as any).url || '',
+    },
+    {
+      id: podcast?.videoId || defaultPodcast.id,
+      videoId: podcast?.videoId || (defaultPodcast as any).videoId,
+      channelId: 'supreme-light',
+      title: 'Supreme Light Creations',
+      subtitle: podcast?.title || (defaultPodcast as any).subtitle || 'Meditation & Creative Videos',
+      thumbnail: podcast?.thumbnail || defaultPodcast.thumbnail,
+      badge: podcast?.badge || (defaultPodcast as any).badge || 'NEW',
+      badgeColor: podcast?.badgeColor || (defaultPodcast as any).badgeColor || '#ea580c',
+      channelName: 'Supreme Light Creations',
+      url: podcast?.url || (defaultPodcast as any).url || '',
+    },
+    {
+      id: sheeba?.videoId || defaultSheeba.id,
+      videoId: sheeba?.videoId || (defaultSheeba as any).videoId,
+      channelId: 'bk-sheeba',
+      title: 'BK Sheeba',
+      subtitle: sheeba?.title || (defaultSheeba as any).subtitle || 'Spiritual Classes & Chintan',
+      thumbnail: sheeba?.thumbnail || defaultSheeba.thumbnail,
+      badge: sheeba?.badge || (defaultSheeba as any).badge || 'CLASS',
+      badgeColor: sheeba?.badgeColor || (defaultSheeba as any).badgeColor || '#15803d',
+      channelName: 'BK Sheeba',
+      url: sheeba?.url || (defaultSheeba as any).url || '',
+    },
+    {
+      id: sheeja?.videoId || defaultSheeja.id,
+      videoId: sheeja?.videoId || (defaultSheeja as any).videoId,
+      channelId: 'UCvQFuOM38iAZD7ltMujOq-g',
+      title: 'BK Sheeja',
+      subtitle: sheeja?.title || (defaultSheeja as any).subtitle || 'Murli Chintan & Classes',
+      thumbnail: sheeja?.thumbnail || defaultSheeja.thumbnail,
+      badge: sheeja?.badge || (defaultSheeja as any).badge || 'CLASS',
+      badgeColor: sheeja?.badgeColor || (defaultSheeja as any).badgeColor || '#0284c7',
+      channelName: 'BK Sheeja',
+      url: sheeja?.url || (defaultSheeja as any).url || 'https://www.youtube.com/watch?v=tiKb43faieY',
+    },
+  ];
 }
 
 const styles = StyleSheet.create({

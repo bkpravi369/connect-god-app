@@ -6,8 +6,11 @@ import { FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import { Varadan } from '@/lib/constants';
 import { getTodayISTDateString, getFormattedMurliDate } from '@/services/murliService';
 
+export const DEFAULT_FALLBACK_VARADAN_TEXT =
+  'സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി, മാസ്റ്റർ ദാതാവായി മാറി സർവ്വ ആത്മാക്കൾക്കും ശാന്തിയുടെയും ശക്തിയുടെയും ദാനം നൽകുന്ന സദാ തൃപ്ത ആത്മാവായി ഭവിക്കട്ടെ.';
+
 type Props = {
-  varadan: Varadan;
+  varadan?: Varadan | string | null;
   onReadFull?: () => void;
   onRefresh?: () => void;
   isRefreshing?: boolean;
@@ -15,8 +18,11 @@ type Props = {
 };
 
 function ParchmentBackground({ width, height }: { width: number; height: number }) {
+  const safeW = Math.max(width || 320, 100);
+  const safeH = Math.max(height || 140, 60);
+
   return (
-    <Svg width={width} height={height} style={StyleSheet.absoluteFillObject}>
+    <Svg width={safeW} height={safeH} style={StyleSheet.absoluteFillObject}>
       <Defs>
         <RadialGradient id="parch-center" cx="50%" cy="30%" r="85%">
           <Stop offset="0%" stopColor="#FFFFFF" />
@@ -29,18 +35,18 @@ function ParchmentBackground({ width, height }: { width: number; height: number 
           <Stop offset="100%" stopColor="#D4AF37" stopOpacity={0.12} />
         </RadialGradient>
       </Defs>
-      <Rect x="0" y="0" width={width} height={height} fill="url(#parch-center)" rx="18" />
-      <Rect x="0" y="0" width={width} height={height} fill="url(#parch-glow)" rx="18" />
+      <Rect x="0" y="0" width={safeW} height={safeH} fill="url(#parch-center)" rx="18" />
+      <Rect x="0" y="0" width={safeW} height={safeH} fill="url(#parch-glow)" rx="18" />
       {/* Corner flourishes with gold hue */}
       <G opacity={0.5}>
         <Path d="M 12 12 Q 22 7 26 16 Q 16 14 12 12 Z" fill="#D4AF37" />
-        <Path d={`M ${width - 12} 12 Q ${width - 22} 7 ${width - 26} 16 Q ${width - 16} 14 ${width - 12} 12 Z`} fill="#D4AF37" />
-        <Path d={`M 12 ${height - 12} Q 22 ${height - 7} 26 ${height - 16} Q 16 ${height - 14} 12 ${height - 12} Z`} fill="#D4AF37" />
-        <Path d={`M ${width - 12} ${height - 12} Q ${width - 22} ${height - 7} ${width - 26} ${height - 16} Q ${width - 16} ${height - 14} ${width - 12} ${height - 12} Z`} fill="#D4AF37" />
+        <Path d={`M ${safeW - 12} 12 Q ${safeW - 22} 7 ${safeW - 26} 16 Q ${safeW - 16} 14 ${safeW - 12} 12 Z`} fill="#D4AF37" />
+        <Path d={`M 12 ${safeH - 12} Q 22 ${safeH - 7} 26 ${safeH - 16} Q 16 ${safeH - 14} 12 ${safeH - 12} Z`} fill="#D4AF37" />
+        <Path d={`M ${safeW - 12} ${safeH - 12} Q ${safeW - 22} ${safeH - 7} ${safeW - 26} ${safeH - 16} Q ${safeW - 16} ${safeH - 14} ${safeW - 12} ${safeH - 12} Z`} fill="#D4AF37" />
       </G>
       {/* 1.5px gold border with #D4AF37 */}
-      <Rect x="1" y="1" width={width - 2} height={height - 2} fill="none" stroke="#D4AF37" strokeWidth="1.5" rx="17" opacity={0.92} />
-      <Rect x="3.5" y="3.5" width={width - 7} height={height - 7} fill="none" stroke="#D4AF37" strokeWidth="0.6" rx="15" opacity={0.45} />
+      <Rect x="1" y="1" width={safeW - 2} height={safeH - 2} fill="none" stroke="#D4AF37" strokeWidth="1.5" rx="17" opacity={0.92} />
+      <Rect x="3.5" y="3.5" width={safeW - 7} height={safeH - 7} fill="none" stroke="#D4AF37" strokeWidth="0.6" rx="15" opacity={0.45} />
     </Svg>
   );
 }
@@ -49,31 +55,37 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
   const pulse = useRef(new Animated.Value(1)).current;
   const glowPulse = useRef(new Animated.Value(0.2)).current;
   const spinAnim = useRef(new Animated.Value(0)).current;
-  const skeletonPulse = useRef(new Animated.Value(0.35)).current;
+  const skeletonPulse = useRef(new Animated.Value(0.4)).current;
   const [dims, setDims] = React.useState({ w: 320, h: 140 });
 
-  // Skeleton pulse animation
+  // Safe skeleton pulse animation
   useEffect(() => {
-    if (isLoading) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(skeletonPulse, {
-            toValue: 0.85,
-            duration: 800,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(skeletonPulse, {
-            toValue: 0.35,
-            duration: 800,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
+    if (!isLoading) {
+      skeletonPulse.setValue(1);
+      return;
     }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonPulse, {
+          toValue: 0.85,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(skeletonPulse, {
+          toValue: 0.35,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+      ])
+    );
+    loop.start();
+    return () => {
+      try {
+        loop.stop();
+      } catch {}
+    };
   }, [isLoading, skeletonPulse]);
 
   // Infinite subtle breathing golden aura glow
@@ -85,13 +97,13 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
             toValue: 1.008,
             duration: 2800,
             easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
           Animated.timing(glowPulse, {
             toValue: 0.5,
             duration: 2800,
             easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
         ]),
         Animated.parallel([
@@ -99,19 +111,23 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
             toValue: 1,
             duration: 2800,
             easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
           Animated.timing(glowPulse, {
             toValue: 0.2,
             duration: 2800,
             easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
+            useNativeDriver: false,
           }),
         ]),
       ])
     );
     loop.start();
-    return () => loop.stop();
+    return () => {
+      try {
+        loop.stop();
+      } catch {}
+    };
   }, [pulse, glowPulse]);
 
   useEffect(() => {
@@ -121,7 +137,7 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
           toValue: 1,
           duration: 800,
           easing: Easing.linear,
-          useNativeDriver: true,
+          useNativeDriver: false,
         })
       ).start();
     } else {
@@ -135,10 +151,14 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
   });
 
   const handlePortalPress = async () => {
-    if (onReadFull) {
-      onReadFull();
-    } else {
-      await Linking.openURL('https://madhubanmurli.org/');
+    try {
+      if (onReadFull) {
+        onReadFull();
+      } else {
+        await Linking.openURL('https://madhubanmurli.org/');
+      }
+    } catch {
+      // Safe fallback
     }
   };
 
@@ -146,9 +166,10 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
   const { ddmmyy: formattedDate } = getFormattedMurliDate(todayDateStr);
 
   const blessingText =
-    varadan.textMl ||
-    varadan.text ||
-    'സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി, മാസ്റ്റർ ദാതാവായി മാറി സർവ്വ ആത്മാക്കൾക്കും ശാന്തിയുടെയും ശക്തിയുടെയും ദാനം നൽകുന്ന സദാ തൃപ്ത ആത്മാവായി ഭവിക്കട്ടെ.';
+    (typeof varadan === 'string'
+      ? varadan
+      : varadan?.textMl || varadan?.text) ||
+    DEFAULT_FALLBACK_VARADAN_TEXT;
 
   return (
     <Animated.View
@@ -158,7 +179,12 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
           transform: [{ scale: pulse }],
         },
       ]}
-      onLayout={(e) => setDims({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
+      onLayout={(e) => {
+        const { width, height } = e?.nativeEvent?.layout || {};
+        if (width && height) {
+          setDims({ w: width, h: height });
+        }
+      }}
     >
       <ParchmentBackground width={dims.w} height={dims.h} />
       <View style={styles.inner}>
@@ -166,7 +192,7 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
         <View style={styles.headerRow}>
           <View style={styles.titleWrap}>
             <View style={styles.headingAccent} />
-            <Text style={styles.heading}>വരദാനം ({formattedDate})</Text>
+            <Text style={styles.heading}>വരദാനം ({formattedDate || 'ഇന്ന്'})</Text>
             <Sparkles color="#D4AF37" size={14} strokeWidth={2.4} />
           </View>
 

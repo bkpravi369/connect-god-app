@@ -39,6 +39,7 @@ import {
   SHEEJA_SISTER_COMMENTARIES,
   OTHERS_COMMENTARIES,
   OM_DHWANI_TRACKS,
+  OM_AND_BHORG_TRACKS,
   OWN_TUNES_TRACKS,
   FUNCTION_MUSIC_TRACKS,
   OWN_MUSIC_TRACKS,
@@ -75,7 +76,7 @@ export const MEDIA_TABS_CONFIG: Record<
     subTabs: [
       { id: "hindi", label: "Hindi" },
       { id: "malayalam", label: "Malayalam" },
-      { id: "om_dhwani", label: "Om Dhwani" },
+      { id: "om_and_bhorg", label: "Om and Bhorg" },
       { id: "own_tunes", label: "Own Tunes" },
     ],
   },
@@ -321,11 +322,11 @@ export default function MediaScreen() {
       case "songs": {
         if (subTab === "hindi") return hindiTracks;
         if (subTab === "malayalam") return malayalamTracks;
-        if (subTab === "om_dhwani") {
+        if (subTab === "om_and_bhorg" || subTab === "om_dhwani") {
           const cldOm = musicTracks.filter((t) =>
-            /omdhvani|om\s*dhwani|omkar/i.test(t.title || t.url)
+            /omdhvani|om\s*dhwani|omkar|bhog|bhorg/i.test(t.title || t.url)
           );
-          const list = [...OM_DHWANI_TRACKS];
+          const list = [...OM_AND_BHORG_TRACKS];
           cldOm.forEach((c) => {
             if (!list.some((t) => t.url === c.url || t.title === c.title)) {
               list.unshift(c);

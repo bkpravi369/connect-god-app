@@ -53,14 +53,17 @@ export const MASTER_COMMENTARY_TRACKS: MediaTrack[] = [
   ...OTHERS_COMMENTARIES,
 ];
 
-// ── Songs Sub-tracks: Om Dhwani ───────────────────────────────────────
-export const OM_DHWANI_TRACKS: MediaTrack[] = [
-  { id: 'om1', title: 'Om Dhwani - Meenu Purushottum', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/v1787367169/Omdhvani_meenu_Purushottum.mp3', category: 'song', subCategory: 'om_dhwani' },
-  { id: 'om2', title: 'Om Dhwani - Mahendra Kapoor', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/v1787367169/Omdhvani_mahendra_Kappor.mp3', category: 'song', subCategory: 'om_dhwani' },
-  { id: 'om3', title: 'Om Dhwani Divine Vibrations', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/01_Nirwan.mp3', category: 'song', subCategory: 'om_dhwani' },
-  { id: 'om4', title: 'Omkar Silence Meditation', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/06_Silence.mp3', category: 'song', subCategory: 'om_dhwani' },
-  { id: 'om5', title: 'Deep Om Chanting Dhun', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/03_Subtle_Voice.mp3', category: 'song', subCategory: 'om_dhwani' },
+// ── Songs Sub-tracks: Om and Bhorg ────────────────────────────────────
+export const OM_AND_BHORG_TRACKS: MediaTrack[] = [
+  { id: 'om1', title: 'Om Dhwani - Meenu Purushottum', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/v1787367169/Omdhvani_meenu_Purushottum.mp3', category: 'song', subCategory: 'om_and_bhorg' },
+  { id: 'om2', title: 'Om Dhwani - Mahendra Kapoor', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/v1787367169/Omdhvani_mahendra_Kappor.mp3', category: 'song', subCategory: 'om_and_bhorg' },
+  { id: 'om3', title: 'Om Dhwani Divine Vibrations', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/01_Nirwan.mp3', category: 'song', subCategory: 'om_and_bhorg' },
+  { id: 'om4', title: 'Omkar Silence Meditation', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/06_Silence.mp3', category: 'song', subCategory: 'om_and_bhorg' },
+  { id: 'om5', title: 'Deep Om Chanting Dhun', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/03_Subtle_Voice.mp3', category: 'song', subCategory: 'om_and_bhorg' },
+  { id: 'bh1', title: 'Bhog Sandesh Divine Chime', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/01_Awakning.mp3', category: 'song', subCategory: 'om_and_bhorg' },
+  { id: 'bh2', title: 'Brahma Bhojan Bhorg Song', url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/02_Moving_On.mp3', category: 'song', subCategory: 'om_and_bhorg' },
 ];
+export const OM_DHWANI_TRACKS = OM_AND_BHORG_TRACKS;
 
 // ── Songs Sub-tracks: Own Tunes ───────────────────────────────────────
 export const OWN_TUNES_TRACKS: MediaTrack[] = [

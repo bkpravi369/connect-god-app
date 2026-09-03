@@ -67,6 +67,7 @@ export default function RootLayout() {
         <View style={styles.mobileAppContainer}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
+            <Stack.Screen name="about" />
             <Stack.Screen name="privacy" />
             <Stack.Screen name="wallpapers" />
             <Stack.Screen name="+not-found" />

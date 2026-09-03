@@ -73,6 +73,7 @@ type Props = {
   onMurliPress: () => void;
   onMeditationPress: () => void;
   onWallpapersPress?: () => void;
+  onAboutPress?: () => void;
   onSelectChannel?: (channelId: string) => void;
   socialLinks?: SocialLinks;
 };
@@ -107,7 +108,7 @@ function DrawerLogo() {
   return <BKSunEmblem size={44} />;
 }
 
-export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMeditationPress, onWallpapersPress, onSelectChannel, socialLinks }: Props) {
+export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMeditationPress, onWallpapersPress, onAboutPress, onSelectChannel, socialLinks }: Props) {
   const router = useRouter();
   const offscreen = -(DRAWER_W + 60);
   const translateX = React.useRef(new Animated.Value(offscreen)).current;
@@ -310,10 +311,17 @@ export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMed
 
           <Pressable
             style={({ pressed }) => [styles.linkRow, pressed && styles.rowPressed]}
-            onPress={() => { onClose(); }}
+            onPress={() => {
+              onClose();
+              if (onAboutPress) {
+                onAboutPress();
+              } else {
+                router.push('/about' as any);
+              }
+            }}
           >
-            <View style={styles.linkIconWrap}>
-              <Info color={COLORS.primary[700]} size={20} strokeWidth={2} />
+            <View style={[styles.linkIconWrap, { backgroundColor: '#eff6ff' }]}>
+              <Info color="#1d4ed8" size={20} strokeWidth={2} />
             </View>
             <Text style={styles.linkText}>About Us</Text>
             <ChevronRight color={COLORS.neutral[300]} size={18} strokeWidth={2} />

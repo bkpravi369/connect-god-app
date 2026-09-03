@@ -25,6 +25,7 @@ import {
   Music,
   MessageCircle,
   Send,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
@@ -71,6 +72,7 @@ type Props = {
   onAdminPress: () => void;
   onMurliPress: () => void;
   onMeditationPress: () => void;
+  onWallpapersPress?: () => void;
   onSelectChannel?: (channelId: string) => void;
   socialLinks?: SocialLinks;
 };
@@ -105,7 +107,7 @@ function DrawerLogo() {
   return <BKSunEmblem size={44} />;
 }
 
-export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMeditationPress, onSelectChannel, socialLinks }: Props) {
+export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMeditationPress, onWallpapersPress, onSelectChannel, socialLinks }: Props) {
   const router = useRouter();
   const offscreen = -(DRAWER_W + 60);
   const translateX = React.useRef(new Animated.Value(offscreen)).current;
@@ -285,6 +287,24 @@ export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMed
               <Music color={COLORS.primary[700]} size={20} strokeWidth={2} />
             </View>
             <Text style={styles.linkText}>Meditation</Text>
+            <ChevronRight color={COLORS.neutral[300]} size={18} strokeWidth={2} />
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.linkRow, pressed && styles.rowPressed]}
+            onPress={() => {
+              onClose();
+              if (onWallpapersPress) {
+                onWallpapersPress();
+              } else {
+                router.push('/wallpapers' as any);
+              }
+            }}
+          >
+            <View style={[styles.linkIconWrap, { backgroundColor: '#fff7ed' }]}>
+              <ImageIcon color={COLORS.saffron[600]} size={20} strokeWidth={2} />
+            </View>
+            <Text style={styles.linkText}>Wallpapers</Text>
             <ChevronRight color={COLORS.neutral[300]} size={18} strokeWidth={2} />
           </Pressable>
 

@@ -715,7 +715,7 @@ export default function MediaScreen() {
           ) : visibleTracks.length === 0 ? (
             <View style={styles.emptyState}>
               <Music color={COLORS.neutral[300]} size={36} strokeWidth={2} />
-              <Text style={styles.emptyText}>No tracks found in this category</Text>
+              <Text style={styles.emptyText}>No tracks available in this category.</Text>
               <Text style={styles.emptySub}>
                 {searchQuery
                   ? "Try clearing your search query"

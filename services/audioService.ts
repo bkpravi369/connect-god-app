@@ -2,44 +2,27 @@ import { Platform } from 'react-native';
 import { Audio } from 'expo-av';
 import { extractDriveFileId } from '@/lib/constants';
 import { getJSON, setJSON } from '@/lib/storage';
-import {
-  MediaTrack,
-  MASTER_COMMENTARY_TRACKS,
-  SHEEBA_SISTER_COMMENTARIES,
-  SHEEJA_SISTER_COMMENTARIES,
-  OTHERS_COMMENTARIES,
-  OM_AND_BHORG_TRACKS,
-  OWN_TUNES_TRACKS,
-  FUNCTION_MUSIC_TRACKS,
-  OWN_MUSIC_TRACKS,
-  HINDI_RINGTONES,
-  MALAYALAM_RINGTONES,
-  HINDI_SONGS_FALLBACK,
-  MALAYALAM_SONGS_FALLBACK,
-  MEDITATION_MUSIC_TRACKS,
-  SONGS_DATA,
-  MUSIC_DATA,
-} from '@/constants/mediaTracks';
+import { MediaTrack } from '@/constants/mediaTracks';
 
 export const CLOUDINARY_CLOUD_NAME = 'tb5bmwd5';
 
 export type MainMediaTab = 'songs' | 'commentary' | 'music' | 'ringtones';
 
 export type SubTabKey =
-  // 1. Songs
+  // [SONGS]
   | 'hindi'
   | 'malayalam'
   | 'om_and_bhorg'
   | 'own_tunes'
-  // 2. Commentary
+  // [COMMENTARY]
   | 'sheeba_sister'
   | 'sheeja_sister'
   | 'others'
-  // 3. Music
+  // [MUSIC]
   | 'meditation_music'
   | 'function_music'
   | 'own_music'
-  // 4. Ringtones
+  // [RINGTONES]
   | 'ringtone_hindi'
   | 'ringtone_malayalam';
 
@@ -65,96 +48,48 @@ export interface CloudinaryListResponse {
   updated_at?: string;
 }
 
-export interface SubTabTagConfig {
-  primary: string;
-  fallbacks: string[];
+export interface StrictSubTabConfig {
+  tag: string;
+  altTag?: string;
   category: 'song' | 'commentary' | 'music' | 'ringtone';
-  defaultSpeaker?: string;
-  staticFallback: MediaTrack[];
+  speaker?: string;
 }
 
-export const CLOUDINARY_SUBTAB_CONFIG: Record<SubTabKey, SubTabTagConfig> = {
-  // ── 1. MAIN TAB: "Songs" ──────────────────────────────────────────────
-  hindi: {
-    primary: 'song_hindi',
-    fallbacks: ['hindi', 'hindi songs'],
-    category: 'song',
-    staticFallback: HINDI_SONGS_FALLBACK,
-  },
-  malayalam: {
-    primary: 'song_malayalam',
-    fallbacks: ['malayalam', 'malayalam songs'],
-    category: 'song',
-    staticFallback: MALAYALAM_SONGS_FALLBACK,
-  },
-  om_and_bhorg: {
-    primary: 'om_bhorg',
-    fallbacks: ['om_bhog', 'om_dhwani'],
-    category: 'song',
-    staticFallback: OM_AND_BHORG_TRACKS,
-  },
-  own_tunes: {
-    primary: 'own_tunes',
-    fallbacks: ['own tunes'],
-    category: 'song',
-    staticFallback: OWN_TUNES_TRACKS,
-  },
+/**
+ * STRICT 1-TO-1 EXACT TAG MAPPING
+ * No loose fallbacks. No broad searches. No cross-category mixing.
+ */
+export const CLOUDINARY_EXACT_TAGS: Record<SubTabKey, StrictSubTabConfig> = {
+  // [SONGS]
+  hindi: { tag: 'song_hindi', category: 'song' },
+  malayalam: { tag: 'song_malayalam', category: 'song' },
+  om_and_bhorg: { tag: 'om_bhog', altTag: 'om_bhorg', category: 'song' },
+  own_tunes: { tag: 'own_tunes', category: 'song' },
 
-  // ── 2. MAIN TAB: "Commentary" ─────────────────────────────────────────
+  // [COMMENTARY]
   sheeba_sister: {
-    primary: 'commentary_sheeba',
-    fallbacks: ['sheeba_sister', 'sheeba'],
+    tag: 'commentary_sheeba',
     category: 'commentary',
-    defaultSpeaker: 'BK Sheeba Sister',
-    staticFallback: SHEEBA_SISTER_COMMENTARIES,
+    speaker: 'BK Sheeba Sister',
   },
   sheeja_sister: {
-    primary: 'commentary_sheeja',
-    fallbacks: ['sheeja_sister', 'sheeja'],
+    tag: 'commentary_sheeja',
     category: 'commentary',
-    defaultSpeaker: 'BK Sheeja Sister',
-    staticFallback: SHEEJA_SISTER_COMMENTARIES,
+    speaker: 'BK Sheeja Sister',
   },
   others: {
-    primary: 'commentary_others',
-    fallbacks: ['commentary'],
+    tag: 'commentary_others',
     category: 'commentary',
-    staticFallback: OTHERS_COMMENTARIES,
   },
 
-  // ── 3. MAIN TAB: "Music" ──────────────────────────────────────────────
-  meditation_music: {
-    primary: 'meditation_music',
-    fallbacks: ['music', 'Musics'],
-    category: 'music',
-    staticFallback: MEDITATION_MUSIC_TRACKS,
-  },
-  function_music: {
-    primary: 'function_music',
-    fallbacks: ['function music'],
-    category: 'music',
-    staticFallback: FUNCTION_MUSIC_TRACKS,
-  },
-  own_music: {
-    primary: 'own_music',
-    fallbacks: ['own music'],
-    category: 'music',
-    staticFallback: OWN_MUSIC_TRACKS,
-  },
+  // [MUSIC]
+  meditation_music: { tag: 'meditation_music', category: 'music' },
+  function_music: { tag: 'function_music', category: 'music' },
+  own_music: { tag: 'own_music', category: 'music' },
 
-  // ── 4. MAIN TAB: "Ringtones" ──────────────────────────────────────────
-  ringtone_hindi: {
-    primary: 'ringtone_hindi',
-    fallbacks: ['hindi_ringtone', 'ringtone'],
-    category: 'ringtone',
-    staticFallback: HINDI_RINGTONES,
-  },
-  ringtone_malayalam: {
-    primary: 'ringtone_malayalam',
-    fallbacks: ['ringtone', 'malayalam_ringtone'],
-    category: 'ringtone',
-    staticFallback: MALAYALAM_RINGTONES,
-  },
+  // [RINGTONES]
+  ringtone_hindi: { tag: 'ringtone_hindi', category: 'ringtone' },
+  ringtone_malayalam: { tag: 'ringtone_malayalam', category: 'ringtone' },
 };
 
 /**
@@ -226,14 +161,14 @@ export function buildCloudinaryAssetDownloadUrl(item: {
 }
 
 /**
- * Maps raw Cloudinary resources into structured MediaTrack array
+ * Maps raw Cloudinary resources strictly into MediaTrack array for this exact subTab
  */
 export function mapCloudinaryResourcesToTracks(
   resources: CloudinaryRawResource[],
   subTab: SubTabKey
 ): MediaTrack[] {
   if (!Array.isArray(resources)) return [];
-  const cfg = CLOUDINARY_SUBTAB_CONFIG[subTab];
+  const cfg = CLOUDINARY_EXACT_TAGS[subTab];
   if (!cfg) return [];
 
   return resources.map((r, idx) => {
@@ -246,38 +181,38 @@ export function mapCloudinaryResourcesToTracks(
       url,
       category: cfg.category,
       subCategory: subTab,
-      speaker: cfg.defaultSpeaker,
+      speaker: cfg.speaker,
       duration: r.duration,
     };
   });
 }
 
 /**
- * Synchronous cached tracks getter for 0ms instant initial rendering
+ * Synchronous cached tracks getter - returns ONLY exact cached tracks for this sub-tab
+ * Never backfills with unrelated tracks.
  */
 export function getInitialSubTabTracks(subTab: SubTabKey): MediaTrack[] {
-  const storageKey = `cld_subtab_${subTab}_v3`;
+  const storageKey = `cld_exact_v4_${subTab}`;
   const cached = getJSON<MediaTrack[] | null>(storageKey, null);
-  if (Array.isArray(cached) && cached.length > 0) {
+  if (Array.isArray(cached)) {
     return cached;
   }
-  const cfg = CLOUDINARY_SUBTAB_CONFIG[subTab];
-  return cfg ? cfg.staticFallback : [];
+  return [];
 }
 
 /**
- * Fetches dynamic Cloudinary JSON list for a sub-tab using primary tag with fallbacks
+ * Queries ONLY the exact tag for the given sub-tab.
+ * No fallbacks. No combining. No cross-contamination.
  */
 export async function fetchSubTabTracks(
   subTab: SubTabKey,
   forceRefresh = false
 ): Promise<MediaTrack[]> {
-  const cfg = CLOUDINARY_SUBTAB_CONFIG[subTab];
+  const cfg = CLOUDINARY_EXACT_TAGS[subTab];
   if (!cfg) return [];
 
-  const storageKey = `cld_subtab_${subTab}_v3`;
+  const storageKey = `cld_exact_v4_${subTab}`;
 
-  // Return cache immediately if available and not force-refreshing
   if (!forceRefresh) {
     const cached = getJSON<MediaTrack[] | null>(storageKey, null);
     if (Array.isArray(cached) && cached.length > 0) {
@@ -285,9 +220,10 @@ export async function fetchSubTabTracks(
     }
   }
 
-  const tagsToTry = [cfg.primary, ...cfg.fallbacks];
+  // Exact tags to check: primary tag, and if 404, only the specific alternative tag name
+  const tagsToCheck = cfg.altTag ? [cfg.tag, cfg.altTag] : [cfg.tag];
 
-  for (const tag of tagsToTry) {
+  for (const tag of tagsToCheck) {
     try {
       const endpoint = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/${encodeURIComponent(tag)}.json`;
       const res = await fetch(endpoint, { cache: forceRefresh ? 'no-cache' : 'default' });
@@ -295,38 +231,22 @@ export async function fetchSubTabTracks(
         const data: CloudinaryListResponse = await res.json();
         if (Array.isArray(data.resources) && data.resources.length > 0) {
           const tracks = mapCloudinaryResourcesToTracks(data.resources, subTab);
-
-          // For 'others' commentary or 'ringtone_malayalam', merge static curated items if needed
-          let finalTracks = tracks;
-          if (subTab === 'others' && OTHERS_COMMENTARIES.length > 0) {
-            const existingUrls = new Set(tracks.map((t) => t.url));
-            const extra = OTHERS_COMMENTARIES.filter((o) => !existingUrls.has(o.url));
-            finalTracks = [...tracks, ...extra];
-          } else if (subTab === 'ringtone_malayalam' && MALAYALAM_RINGTONES.length > 0) {
-            const existingUrls = new Set(tracks.map((t) => t.url));
-            const extra = MALAYALAM_RINGTONES.filter((m) => !existingUrls.has(m.url));
-            finalTracks = [...tracks, ...extra];
-          }
-
-          setJSON(storageKey, finalTracks);
-          return finalTracks;
+          setJSON(storageKey, tracks);
+          return tracks;
         }
       }
     } catch (err) {
-      console.warn(`[AudioService] Error trying tag "${tag}" for ${subTab}:`, err);
+      console.warn(`[AudioService] Error fetching exact tag "${tag}" for ${subTab}:`, err);
     }
   }
 
-  // Fallback to static initial dataset if Cloudinary tags returned empty or errored
-  const fallback = cfg.staticFallback;
-  if (fallback && fallback.length > 0) {
-    return fallback;
-  }
+  // If no files match the exact tag, return strictly empty array (do NOT backfill)
+  setJSON(storageKey, []);
   return [];
 }
 
 /**
- * Pre-fetches all sub-tabs for a main tab in background
+ * Pre-fetches all sub-tabs for a main tab in background using strict 1-to-1 exact tags
  */
 export async function prefetchMainTabAudio(
   mainTab: MainMediaTab,
@@ -358,9 +278,9 @@ export async function prefetchMainTabAudio(
 
 // ── Legacy Compatibility Helpers ───────────────────────────────────────
 export const AUDIO_STORAGE_KEYS = {
-  malayalam: 'cld_subtab_malayalam_v3',
-  hindi: 'cld_subtab_hindi_v3',
-  music: 'cld_subtab_meditation_music_v3',
+  malayalam: 'cld_exact_v4_malayalam',
+  hindi: 'cld_exact_v4_hindi',
+  music: 'cld_exact_v4_meditation_music',
 } as const;
 
 export function getCachedCloudinaryCategory(category: AudioCategoryTab): MediaTrack[] {
@@ -371,8 +291,6 @@ export function getCachedCloudinaryCategory(category: AudioCategoryTab): MediaTr
       return getInitialSubTabTracks('hindi');
     case 'music':
       return getInitialSubTabTracks('meditation_music');
-    case 'commentary':
-      return MASTER_COMMENTARY_TRACKS;
     default:
       return [];
   }

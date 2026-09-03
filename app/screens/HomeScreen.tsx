@@ -292,8 +292,6 @@ export default function HomeScreen({
         visible={zoomOpen}
         onClose={() => setZoomOpen(false)}
         onJoin={handleZoomJoin}
-        meetingTopic={zoomConfig?.topic}
-        meetingTime={zoomConfig?.meetingTime}
       />
     </ScrollView>
   );
@@ -472,3 +470,5 @@ const styles = StyleSheet.create({
     width: '48.2%',
   },
 });
+
+export { HomeScreen };

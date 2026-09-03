@@ -103,6 +103,12 @@ export const COLORS = {
     900: '#1c1610',
     950: '#0D0F14', // Deep Serene Dark
   },
+  // Semantic UI Aliases
+  background: '#FAF8F5',
+  card: '#ffffff',
+  text: '#1c1610',
+  textMuted: '#8c7d6b',
+  border: '#ebe4d8',
 } as const;
 
 export const SPACING = {
@@ -111,6 +117,7 @@ export const SPACING = {
   md: 12,
   lg: 16,
   xl: 20,
+  xxl: 24,
   '2xl': 24,
   '3xl': 32,
   '4xl': 40,
@@ -212,6 +219,10 @@ export const FONTS = {
   sansMedium: 'Inter-Medium',
   sansSemiBold: 'Inter-SemiBold',
   sansBold: 'Inter-Bold',
+  inter: 'Inter-Regular',
+  interMedium: 'Inter-Medium',
+  interSemiBold: 'Inter-SemiBold',
+  interBold: 'Inter-Bold',
   serif: 'Georgia',
   serifMedium: 'Georgia',
   serifBold: 'Georgia',

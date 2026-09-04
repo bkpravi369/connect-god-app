@@ -44,7 +44,7 @@ import { cleanMediaTitle, getCloudinaryDownloadUrl } from "@/services/mediaServi
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { SoundwaveIndicator } from "@/components/SoundwaveIndicator";
 
-// ── Tab Hierarchy & Cloudinary-Connected Structure ────────────────────
+// ── Tab Hierarchy & Cloudflare R2-Connected Structure ────────────────────
 export interface SubTabItem {
   id: SubTabKey;
   label: string;
@@ -62,10 +62,10 @@ export const MEDIA_TABS_CONFIG: Record<
     label: "Songs",
     icon: Music,
     subTabs: [
+      { id: "panch_swarup", label: "Panch Swarup" },
       { id: "hindi", label: "Hindi" },
       { id: "malayalam", label: "Malayalam" },
-      { id: "om_and_bhorg", label: "Om and Bhorg" },
-      { id: "own_tunes", label: "Own Tunes" },
+      { id: "om_and_bhog", label: "Om & Bhog" },
     ],
   },
   commentary: {
@@ -81,34 +81,30 @@ export const MEDIA_TABS_CONFIG: Record<
     label: "Music",
     icon: Sparkles,
     subTabs: [
-      { id: "meditation_music", label: "Meditation Music" },
       { id: "function_music", label: "Function Music" },
       { id: "own_music", label: "Own Music" },
     ],
   },
   ringtones: {
-    label: "Ringtones",
+    label: "Ringtone",
     icon: Volume2,
     subTabs: [
-      { id: "ringtone_hindi", label: "Hindi" },
-      { id: "ringtone_malayalam", label: "Malayalam" },
+      { id: "ringtones", label: "Ringtones" },
     ],
   },
 };
 
 const ALL_SUBTAB_KEYS: SubTabKey[] = [
+  "panch_swarup",
   "hindi",
   "malayalam",
-  "om_and_bhorg",
-  "own_tunes",
+  "om_and_bhog",
   "sheeba_sister",
   "sheeja_sister",
   "others",
-  "meditation_music",
   "function_music",
   "own_music",
-  "ringtone_hindi",
-  "ringtone_malayalam",
+  "ringtones",
 ];
 
 // Helper to initialize initial track dictionary synchronously for 0ms delay
@@ -125,7 +121,7 @@ export default function MediaScreen() {
 
   // Active Tab State
   const [mainTab, setMainTab] = useState<MainMediaTab>("songs");
-  const [subTab, setSubTab] = useState<SubTabKey>("hindi");
+  const [subTab, setSubTab] = useState<SubTabKey>("panch_swarup");
   const [searchQuery, setSearchQuery] = useState("");
 
   // SubTab Track Cache Map (Initialized synchronously from cache)
@@ -259,7 +255,7 @@ export default function MediaScreen() {
   const handleMainTabSelect = (newMainTab: MainMediaTab) => {
     if (newMainTab === mainTab) return;
     setMainTab(newMainTab);
-    const firstSub = MEDIA_TABS_CONFIG[newMainTab].subTabs[0]?.id || "hindi";
+    const firstSub = MEDIA_TABS_CONFIG[newMainTab].subTabs[0]?.id || "panch_swarup";
     setSubTab(firstSub);
     setSearchQuery("");
     loadSubTabAudio(firstSub, true);
@@ -301,13 +297,13 @@ export default function MediaScreen() {
       return;
     }
     const cleanTitle = cleanMediaTitle(track.title);
-    const downloadUrl = getCloudinaryDownloadUrl(track.url);
+    const downloadUrl = track.url.trim();
 
     toast.show(`Downloading: ${cleanTitle}`, "info");
 
     if (Platform.OS === "web" && typeof document !== "undefined") {
       const a = document.createElement("a");
-      a.href = downloadUrl;
+      a.href = encodeURI(downloadUrl);
       a.download = `${cleanTitle}.mp3`;
       a.target = "_blank";
       a.rel = "noopener noreferrer";
@@ -321,7 +317,8 @@ export default function MediaScreen() {
     if (ok) {
       await Linking.openURL(downloadUrl);
     } else {
-      await Linking.openURL(track.url);
+      const encoded = encodeURI(downloadUrl);
+      await Linking.openURL(encoded).catch(() => {});
     }
   };
 
@@ -870,7 +867,7 @@ export default function MediaScreen() {
               <Text style={styles.emptySub}>
                 {searchQuery
                   ? "Try clearing your search query"
-                  : "Pull down to refresh from Cloudinary"}
+                  : "Pull down to refresh audio"}
               </Text>
             </View>
           ) : (

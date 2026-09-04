@@ -4,92 +4,161 @@ import { extractDriveFileId } from '@/lib/constants';
 import { getJSON, setJSON } from '@/lib/storage';
 import { MediaTrack } from '@/constants/mediaTracks';
 
-export const CLOUDINARY_CLOUD_NAME = 'tb5bmwd5';
+export const WORKER_BASE_URL = 'https://babacloudflare.bkpraveen2010.workers.dev';
 
 export type MainMediaTab = 'songs' | 'commentary' | 'music' | 'ringtones';
 
 export type SubTabKey =
   // [SONGS]
+  | 'panch_swarup'
   | 'hindi'
   | 'malayalam'
-  | 'om_and_bhorg'
+  | 'om_and_bhog'
+  | 'om_and_bhorg' // alias
   | 'own_tunes'
   // [COMMENTARY]
   | 'sheeba_sister'
   | 'sheeja_sister'
   | 'others'
   // [MUSIC]
-  | 'meditation_music'
   | 'function_music'
   | 'own_music'
+  | 'meditation_music'
   // [RINGTONES]
+  | 'ringtones'
   | 'ringtone_hindi'
   | 'ringtone_malayalam';
 
 // Backward compatibility type
 export type AudioCategoryTab = 'malayalam' | 'hindi' | 'music' | 'commentary';
 
-export interface CloudinaryRawResource {
-  asset_id: string;
-  public_id: string;
-  version: number;
-  format: string;
-  width?: number;
-  height?: number;
-  type?: string;
-  created_at?: string;
-  bytes?: number;
-  duration?: number;
-  asset_folder?: string;
-}
-
-export interface CloudinaryListResponse {
-  resources: CloudinaryRawResource[];
-  updated_at?: string;
+export interface CloudflareR2Item {
+  key: string;
+  name: string;
+  size?: number;
+  url: string;
 }
 
 export interface StrictSubTabConfig {
-  tag: string;
-  altTag?: string;
+  folder: string;
   category: 'song' | 'commentary' | 'music' | 'ringtone';
   speaker?: string;
 }
 
 /**
- * STRICT 1-TO-1 EXACT TAG MAPPING
- * Queries only exact tags with cache-busting.
+ * EXACT CLOUDFLARE R2 BUCKET FOLDER MAPPING
+ * Map each tab to its exact R2 folder path:
+ * [Commentary]
+ * - Sheeba Sister -> "commentary-sheeba sister"
+ * - Sheeja Sister -> "commentary-sheeja sister"
+ * - Others -> "commentary-others"
+ * [Songs]
+ * - Panch Swarup -> "panch-Swarup"
+ * - Hindi -> "song-hindi"
+ * - Malayalam -> "song-malayalam"
+ * - Om & Bhog -> "om-bhorg"
+ * [Music]
+ * - Function Music -> "function-music"
+ * - Own Music -> "own-music "
+ * [Ringtone]
+ * - Ringtones -> "ringtones"
  */
-export const CLOUDINARY_EXACT_TAGS: Record<SubTabKey, StrictSubTabConfig> = {
-  // [SONGS]
-  hindi: { tag: 'song_hindi', altTag: 'songs_hindi', category: 'song' },
-  malayalam: { tag: 'song_malayalam', category: 'song' },
-  om_and_bhorg: { tag: 'om_bhog', altTag: 'om_bhorg', category: 'song' },
-  own_tunes: { tag: 'own_tunes', category: 'song' },
+export const R2_FOLDER_MAPPING: Record<SubTabKey, string> = {
+  // [Commentary]
+  sheeba_sister: 'commentary-sheeba sister',
+  sheeja_sister: 'commentary-sheeja sister',
+  others: 'commentary-others',
 
-  // [COMMENTARY]
+  // [Songs]
+  panch_swarup: 'panch-Swarup',
+  hindi: 'song-hindi',
+  malayalam: 'song-malayalam',
+  om_and_bhog: 'om-bhorg',
+  om_and_bhorg: 'om-bhorg',
+  own_tunes: 'own-tune',
+
+  // [Music]
+  function_music: 'function-music',
+  own_music: 'own-music ',
+  meditation_music: 'meditation-music',
+
+  // [Ringtone]
+  ringtones: 'ringtones',
+  ringtone_hindi: 'ringtones',
+  ringtone_malayalam: 'ringtones',
+};
+
+export const R2_SUBTAB_CONFIG: Record<SubTabKey, StrictSubTabConfig> = {
+  // [Commentary]
   sheeba_sister: {
-    tag: 'commentary_sheeba',
+    folder: 'commentary-sheeba sister',
     category: 'commentary',
     speaker: 'BK Sheeba Sister',
   },
   sheeja_sister: {
-    tag: 'commentary_sheeja',
+    folder: 'commentary-sheeja sister',
     category: 'commentary',
     speaker: 'BK Sheeja Sister',
   },
   others: {
-    tag: 'commentary_others',
+    folder: 'commentary-others',
     category: 'commentary',
+    speaker: 'Commentary',
   },
 
-  // [MUSIC]
-  meditation_music: { tag: 'meditation_music', category: 'music' },
-  function_music: { tag: 'function_music', category: 'music' },
-  own_music: { tag: 'own_music', category: 'music' },
+  // [Songs]
+  panch_swarup: {
+    folder: 'panch-Swarup',
+    category: 'song',
+  },
+  hindi: {
+    folder: 'song-hindi',
+    category: 'song',
+  },
+  malayalam: {
+    folder: 'song-malayalam',
+    category: 'song',
+  },
+  om_and_bhog: {
+    folder: 'om-bhorg',
+    category: 'song',
+  },
+  om_and_bhorg: {
+    folder: 'om-bhorg',
+    category: 'song',
+  },
+  own_tunes: {
+    folder: 'own-tune',
+    category: 'song',
+  },
 
-  // [RINGTONES]
-  ringtone_hindi: { tag: 'ringtone_hindi', category: 'ringtone' },
-  ringtone_malayalam: { tag: 'ringtone_malayalam', category: 'ringtone' },
+  // [Music]
+  function_music: {
+    folder: 'function-music',
+    category: 'music',
+  },
+  own_music: {
+    folder: 'own-music ',
+    category: 'music',
+  },
+  meditation_music: {
+    folder: 'meditation-music',
+    category: 'music',
+  },
+
+  // [Ringtone]
+  ringtones: {
+    folder: 'ringtones',
+    category: 'ringtone',
+  },
+  ringtone_hindi: {
+    folder: 'ringtones',
+    category: 'ringtone',
+  },
+  ringtone_malayalam: {
+    folder: 'ringtones',
+    category: 'ringtone',
+  },
 };
 
 /**
@@ -97,26 +166,32 @@ export const CLOUDINARY_EXACT_TAGS: Record<SubTabKey, StrictSubTabConfig> = {
  */
 export function resolveSubTabKey(mainTab: MainMediaTab, subTabId: string): SubTabKey {
   if (mainTab === 'ringtones') {
-    if (subTabId === 'hindi' || subTabId === 'ringtone_hindi') return 'ringtone_hindi';
-    if (subTabId === 'malayalam' || subTabId === 'ringtone_malayalam') return 'ringtone_malayalam';
+    return 'ringtones';
   }
   if (mainTab === 'songs') {
-    if (subTabId === 'om_dhwani' || subTabId === 'om_and_bhorg' || subTabId === 'om_bhorg') {
-      return 'om_and_bhorg';
+    if (subTabId === 'panch_swarup' || subTabId === 'panch-Swarup') return 'panch_swarup';
+    if (
+      subTabId === 'om_dhwani' ||
+      subTabId === 'om_and_bhorg' ||
+      subTabId === 'om_bhorg' ||
+      subTabId === 'om_and_bhog'
+    ) {
+      return 'om_and_bhog';
     }
+    if (subTabId === 'own_tune' || subTabId === 'own_tunes') return 'own_tunes';
   }
   if (mainTab === 'music') {
-    if (subTabId === 'music' || subTabId === 'meditation_music') return 'meditation_music';
+    if (subTabId === 'function_music' || subTabId === 'function-music') return 'function_music';
+    if (subTabId === 'own_music' || subTabId === 'own-music') return 'own_music';
   }
   return subTabId as SubTabKey;
 }
 
 /**
- * Converts raw publicId or filename into clean, readable title case string
- * Strips underscores, extensions (.mp3, mp3), bitrate tags (_320kbps, _128kbps),
- * properly handles ordinals (1st Day, 2nd Day, 3rd Day, 4th Day), and preserves sacred numbers (108).
+ * Formats a clean track name from raw filename or key.
+ * Strips .mp3 (and other extensions), bitrate tags, and leading track numbers.
  */
-export function formatCloudinaryTitle(raw: string): string {
+export function formatR2Title(raw: string): string {
   if (!raw) return '';
   let name = raw.split('/').pop() || raw;
   name = name.replace(/\.(mp3|wav|m4a|aac|ogg|mpeg|flac)$/i, '');
@@ -124,91 +199,49 @@ export function formatCloudinaryTitle(raw: string): string {
   name = name.replace(/_320kbps$/i, '');
   name = name.replace(/_128kbps$/i, '');
 
-  // Handle specific day commentary patterns: e.g. '01_1st_DAY' -> '1st Day', '04_DAY_COMMENTARY' -> '4th Day Commentary'
-  name = name.replace(/^0*1[._\-\s]+1st/i, '1st');
-  name = name.replace(/^0*2[._\-\s]+2nd/i, '2nd');
-  name = name.replace(/^0*3[._\-\s]+3rd/i, '3rd');
-  name = name.replace(/^0*4[._\-\s]+DAY/i, '4th Day');
-
-  // Strip leading track number prefixes (e.g. '04-Maanava' -> 'Maanava', '07-baba' -> 'baba'),
-  // but preserve significant 3-digit spiritual numbers like '108'
+  // Strip leading track number prefixes like "01 - ", "04-", but preserve numbers like "108"
   name = name.replace(/^0*(\d{1,2})[._\-\s]+(?=[A-Za-z])/i, '');
 
   // Replace dashes and underscores with spaces
   name = name.replace(/[_-]+/g, ' ');
-  // Collapse duplicate whitespace
   name = name.replace(/\s+/g, ' ').trim();
 
-  // Capitalize words properly while preserving BK and ordinals
-  return name
-    .split(' ')
-    .map((w) => {
-      if (!w) return '';
-      const upper = w.toUpperCase();
-      if (upper === 'BK' || upper === 'B.K') return 'BK';
-      if (/^\d+(?:st|nd|rd|th)$/i.test(w)) return w.toLowerCase();
-      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-    })
-    .join(' ');
+  return name || raw;
 }
 
 /**
- * Constructs direct streaming audio URL for a Cloudinary resource
+ * Maps raw Cloudflare R2 items into MediaTrack array for this exact subTab
  */
-export function buildCloudinaryAssetUrl(item: {
-  version: number | string;
-  public_id: string;
-  format: string;
-}): string {
-  const encPublicId = item.public_id.split('/').map(encodeURIComponent).join('/');
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/v${item.version}/${encPublicId}.${item.format || 'mp3'}`;
-}
-
-/**
- * Constructs direct download audio URL with fl_attachment for instant file download
- */
-export function buildCloudinaryAssetDownloadUrl(item: {
-  version: number | string;
-  public_id: string;
-  format: string;
-}): string {
-  const encPublicId = item.public_id.split('/').map(encodeURIComponent).join('/');
-  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/fl_attachment/v${item.version}/${encPublicId}.${item.format || 'mp3'}`;
-}
-
-/**
- * Maps raw Cloudinary resources strictly into MediaTrack array for this exact subTab
- */
-export function mapCloudinaryResourcesToTracks(
-  resources: CloudinaryRawResource[],
+export function mapR2ItemsToTracks(
+  items: CloudflareR2Item[],
   subTab: SubTabKey
 ): MediaTrack[] {
-  if (!Array.isArray(resources)) return [];
-  const cfg = CLOUDINARY_EXACT_TAGS[subTab];
-  if (!cfg) return [];
+  if (!Array.isArray(items)) return [];
+  const cfg = R2_SUBTAB_CONFIG[subTab];
 
-  return resources.map((r, idx) => {
-    const formattedTitle = formatCloudinaryTitle(r.public_id);
-    const url = buildCloudinaryAssetUrl(r);
+  return items
+    .filter((item) => item && (item.url || item.key))
+    .map((item, idx) => {
+      const rawName = item.name || (item.key ? item.key.split('/').pop() : '') || `Track ${idx + 1}`;
+      const title = formatR2Title(rawName);
+      const audioUrl = item.url ? item.url.trim() : '';
 
-    return {
-      id: `cld_${subTab}_${r.asset_id || r.public_id || idx}`,
-      title: formattedTitle || r.public_id,
-      url,
-      category: cfg.category,
-      subCategory: subTab,
-      speaker: cfg.speaker,
-      duration: r.duration,
-    };
-  });
+      return {
+        id: `r2_${subTab}_${encodeURIComponent(item.key || item.name || String(idx))}`,
+        title,
+        url: audioUrl,
+        category: cfg ? cfg.category : 'song',
+        subCategory: subTab,
+        speaker: cfg?.speaker,
+      };
+    });
 }
 
 /**
- * Synchronous cached tracks getter - returns ONLY exact cached tracks for this sub-tab
- * Never backfills with unrelated tracks.
+ * Synchronous cached tracks getter - returns cached tracks for this sub-tab
  */
 export function getInitialSubTabTracks(subTab: SubTabKey): MediaTrack[] {
-  const storageKey = `cld_exact_v5_${subTab}`;
+  const storageKey = `r2_tracks_v2_${subTab}`;
   const cached = getJSON<MediaTrack[] | null>(storageKey, null);
   if (Array.isArray(cached)) {
     return cached;
@@ -217,17 +250,16 @@ export function getInitialSubTabTracks(subTab: SubTabKey): MediaTrack[] {
 }
 
 /**
- * Queries ONLY the exact tag for the given sub-tab with cache busting.
- * No fallbacks. No combining. No cross-contamination.
+ * Queries the Cloudflare Worker API for the given sub-tab folder with proper URL-encoding.
  */
 export async function fetchSubTabTracks(
   subTab: SubTabKey,
   forceRefresh = false
 ): Promise<MediaTrack[]> {
-  const cfg = CLOUDINARY_EXACT_TAGS[subTab];
-  if (!cfg) return [];
+  const folderPath = R2_FOLDER_MAPPING[subTab];
+  if (!folderPath) return [];
 
-  const storageKey = `cld_exact_v5_${subTab}`;
+  const storageKey = `r2_tracks_v2_${subTab}`;
 
   if (!forceRefresh) {
     const cached = getJSON<MediaTrack[] | null>(storageKey, null);
@@ -236,51 +268,48 @@ export async function fetchSubTabTracks(
     }
   }
 
-  // Exact tags to check: primary tag, and if 404, only the specific alternative tag name (e.g. song_hindi -> songs_hindi)
-  const tagsToCheck = cfg.altTag ? [cfg.tag, cfg.altTag] : [cfg.tag];
+  try {
+    const endpoint = `${WORKER_BASE_URL}/?folder=${encodeURIComponent(folderPath)}`;
+    const res = await fetch(endpoint, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
 
-  for (const tag of tagsToCheck) {
-    try {
-      const timestamp = Date.now();
-      const endpoint = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/list/${encodeURIComponent(tag)}.json?_cb=${timestamp}`;
-      const res = await fetch(endpoint, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-        },
-      });
-
-      if (res.ok) {
-        const data: CloudinaryListResponse = await res.json();
-        if (Array.isArray(data.resources) && data.resources.length > 0) {
-          const tracks = mapCloudinaryResourcesToTracks(data.resources, subTab);
-          setJSON(storageKey, tracks);
-          return tracks;
-        }
+    if (res.ok) {
+      const items: CloudflareR2Item[] = await res.json();
+      if (Array.isArray(items)) {
+        const tracks = mapR2ItemsToTracks(items, subTab);
+        setJSON(storageKey, tracks);
+        return tracks;
       }
-    } catch (err) {
-      console.warn(`[AudioService] Error fetching exact tag "${tag}" for ${subTab}:`, err);
     }
+  } catch (err) {
+    console.warn(`[AudioService] Error fetching R2 folder "${folderPath}" for ${subTab}:`, err);
   }
 
-  // If no files match the exact tag, return strictly empty array (do NOT backfill)
-  setJSON(storageKey, []);
+  const cached = getJSON<MediaTrack[] | null>(storageKey, null);
+  if (Array.isArray(cached)) {
+    return cached;
+  }
+
   return [];
 }
 
 /**
- * Pre-fetches all sub-tabs for a main tab in background using strict 1-to-1 exact tags
+ * Pre-fetches all sub-tabs for a main tab in background
  */
 export async function prefetchMainTabAudio(
   mainTab: MainMediaTab,
   forceRefresh = false
 ): Promise<Record<string, MediaTrack[]>> {
   const subTabsByMain: Record<MainMediaTab, SubTabKey[]> = {
-    songs: ['hindi', 'malayalam', 'om_and_bhorg', 'own_tunes'],
+    songs: ['panch_swarup', 'hindi', 'malayalam', 'om_and_bhog'],
     commentary: ['sheeba_sister', 'sheeja_sister', 'others'],
-    music: ['meditation_music', 'function_music', 'own_music'],
-    ringtones: ['ringtone_hindi', 'ringtone_malayalam'],
+    music: ['function_music', 'own_music'],
+    ringtones: ['ringtones'],
   };
 
   const keys = subTabsByMain[mainTab] || [];
@@ -300,13 +329,7 @@ export async function prefetchMainTabAudio(
   return results;
 }
 
-// ── Legacy Compatibility Helpers ───────────────────────────────────────
-export const AUDIO_STORAGE_KEYS = {
-  malayalam: 'cld_exact_v5_malayalam',
-  hindi: 'cld_exact_v5_hindi',
-  music: 'cld_exact_v5_meditation_music',
-} as const;
-
+// ── Backward Compatibility Helpers ─────────────────────────────────────
 export function getCachedCloudinaryCategory(category: AudioCategoryTab): MediaTrack[] {
   switch (category) {
     case 'malayalam':
@@ -314,35 +337,10 @@ export function getCachedCloudinaryCategory(category: AudioCategoryTab): MediaTr
     case 'hindi':
       return getInitialSubTabTracks('hindi');
     case 'music':
-      return getInitialSubTabTracks('meditation_music');
+      return getInitialSubTabTracks('function_music');
     default:
       return [];
   }
-}
-
-export async function fetchAllCloudinaryAudioTabs(
-  forceRefresh = false
-): Promise<{
-  malayalam: MediaTrack[];
-  hindi: MediaTrack[];
-  music: MediaTrack[];
-  commentary: MediaTrack[];
-}> {
-  const [malayalam, hindi, music, sheeba, sheeja, others] = await Promise.all([
-    fetchSubTabTracks('malayalam', forceRefresh),
-    fetchSubTabTracks('hindi', forceRefresh),
-    fetchSubTabTracks('meditation_music', forceRefresh),
-    fetchSubTabTracks('sheeba_sister', forceRefresh),
-    fetchSubTabTracks('sheeja_sister', forceRefresh),
-    fetchSubTabTracks('others', forceRefresh),
-  ]);
-
-  return {
-    malayalam,
-    hindi,
-    music,
-    commentary: [...sheeba, ...sheeja, ...others],
-  };
 }
 
 let isAudioModeConfigured = false;
@@ -367,44 +365,27 @@ export async function configureAudioMode(): Promise<void> {
 }
 
 /**
- * Generates sanitized candidate variations for a Cloudinary URL to guarantee matching
- */
-function getCloudinaryVariants(url: string): string[] {
-  const list: string[] = [url];
-
-  if (/\/v\d+\//.test(url)) {
-    const unversioned = url.replace(/\/v\d+\//, '/');
-    if (!list.includes(unversioned)) list.push(unversioned);
-  }
-
-  if (url.includes('%20')) {
-    const underscoreUrl = url.replace(/%20/g, '_');
-    if (!list.includes(underscoreUrl)) list.push(underscoreUrl);
-  }
-  if (url.includes('_')) {
-    const spaceUrl = url.replace(/_/g, '%20');
-    if (!list.includes(spaceUrl)) list.push(spaceUrl);
-  }
-
-  const cleanedUrl = url.replace(/[_.\s]+\.mp3$/i, '.mp3');
-  if (!list.includes(cleanedUrl)) list.push(cleanedUrl);
-
-  return list;
-}
-
-/**
  * Returns prioritized candidate streaming URLs for audio files
+ * Encodes spaces to guarantee compatibility across web and native devices.
  */
 export function getAudioStreamCandidates(urlOrFileId: string): string[] {
   if (!urlOrFileId || !urlOrFileId.trim()) return [];
 
-  if (urlOrFileId.includes('cloudinary.com')) {
-    return getCloudinaryVariants(urlOrFileId);
+  const trimmed = urlOrFileId.trim();
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    const candidates: string[] = [];
+    const encoded = encodeURI(trimmed);
+    candidates.push(encoded);
+    if (encoded !== trimmed) {
+      candidates.push(trimmed);
+    }
+    return candidates;
   }
 
   const fileId =
-    extractDriveFileId(urlOrFileId) ||
-    (urlOrFileId.length >= 25 && !urlOrFileId.includes('/') ? urlOrFileId : null);
+    extractDriveFileId(trimmed) ||
+    (trimmed.length >= 25 && !trimmed.includes('/') ? trimmed : null);
 
   if (fileId) {
     return [
@@ -414,5 +395,5 @@ export function getAudioStreamCandidates(urlOrFileId: string): string[] {
     ];
   }
 
-  return [urlOrFileId];
+  return [trimmed];
 }

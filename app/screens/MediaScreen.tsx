@@ -133,9 +133,9 @@ export default function MediaScreen() {
   const [seekTarget, setSeekTarget] = useState<number | null>(null);
   const [audioFailed, setAudioFailed] = useState(false);
 
-  // Auto-play state
-  const [autoPlay, setAutoPlay] = useState(false);
-  const autoPlayRef = useRef(false);
+  // Auto-play state (defaults to true for seamless playback)
+  const [autoPlay, setAutoPlay] = useState(true);
+  const autoPlayRef = useRef(true);
   autoPlayRef.current = autoPlay;
 
   // Timeline scrub state
@@ -149,6 +149,99 @@ export default function MediaScreen() {
     width: 300,
     pageX: 0,
   });
+  const progressAreaRef = useRef<View>(null);
+
+  // Tracks ref for reliable playlist access across search filters
+  const tracksRef = useRef<CloudflareR2Item[]>([]);
+  tracksRef.current = tracks;
+
+  // Web Audio Element Ref & onEnded Callback Ref
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const handleAudioEndedRef = useRef<() => void>(() => {});
+
+  // ── Native Web HTML5 Audio Element Setup ──
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+
+    let audio = audioRef.current;
+    if (!audio) {
+      audio = document.createElement("audio");
+      audio.preload = "auto";
+      audioRef.current = audio;
+      document.body.appendChild(audio);
+    }
+
+    const handleTimeUpdate = () => {
+      if (!isScrubbingRef.current && audio) {
+        setAudioPos(audio.currentTime || 0);
+      }
+    };
+
+    const handleDurationChange = () => {
+      if (audio && audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
+        setAudioDur(audio.duration);
+        audioDurRef.current = audio.duration;
+      }
+    };
+
+    const handleWaiting = () => {
+      setIsBuffering(true);
+    };
+
+    const handleCanPlay = () => {
+      setIsBuffering(false);
+      if (audio && audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
+        setAudioDur(audio.duration);
+        audioDurRef.current = audio.duration;
+      }
+    };
+
+    const handlePlaying = () => {
+      setIsBuffering(false);
+      setIsPlaying(true);
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+
+    const handleEnded = () => {
+      setIsBuffering(false);
+      handleAudioEndedRef.current?.();
+    };
+
+    const handleError = (e: any) => {
+      console.log("[AudioPlayer Web] Stream error event:", e);
+      setIsBuffering(false);
+    };
+
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("durationchange", handleDurationChange);
+    audio.addEventListener("loadedmetadata", handleDurationChange);
+    audio.addEventListener("loadeddata", handleDurationChange);
+    audio.addEventListener("canplay", handleCanPlay);
+    audio.addEventListener("waiting", handleWaiting);
+    audio.addEventListener("playing", handlePlaying);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("error", handleError);
+
+    return () => {
+      if (audio) {
+        audio.removeEventListener("timeupdate", handleTimeUpdate);
+        audio.removeEventListener("durationchange", handleDurationChange);
+        audio.removeEventListener("loadedmetadata", handleDurationChange);
+        audio.removeEventListener("loadeddata", handleDurationChange);
+        audio.removeEventListener("canplay", handleCanPlay);
+        audio.removeEventListener("waiting", handleWaiting);
+        audio.removeEventListener("playing", handlePlaying);
+        audio.removeEventListener("pause", handlePause);
+        audio.removeEventListener("ended", handleEnded);
+        audio.removeEventListener("error", handleError);
+        audio.pause();
+      }
+    };
+  }, []);
 
   // Start skeleton pulse animation
   useEffect(() => {
@@ -260,16 +353,80 @@ export default function MediaScreen() {
     setAudioFailed(false);
     const trackId = track.key || track.url;
     const currentId = playingTrack ? (playingTrack.key || playingTrack.url) : null;
+
     if (currentId === trackId) {
-      setIsPlaying((p) => !p);
+      if (Platform.OS === "web" && audioRef.current) {
+        if (!audioRef.current.paused) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+        } else {
+          audioRef.current.play().catch((e) => console.log("[Audio] Resume error:", e));
+          setIsPlaying(true);
+        }
+      } else {
+        setIsPlaying((p) => !p);
+      }
+      return;
+    }
+
+    // 1. ONE-CLICK PLAY: Immediately update active/current track state
+    setPlayingTrack(track);
+    playingTrackRef.current = track;
+    setIsPlaying(true);
+    setIsBuffering(true);
+    setAudioPos(0);
+    setAudioDur(0);
+    setSeekTarget(null);
+
+    // 2. Direct Web Audio loading and playback in user event tick
+    if (Platform.OS === "web") {
+      let audio = audioRef.current;
+      if (!audio && typeof document !== "undefined") {
+        audio = document.createElement("audio");
+        audio.preload = "auto";
+        audioRef.current = audio;
+        document.body.appendChild(audio);
+      }
+
+      if (audio) {
+        const streamUrl = encodeURI(track.url.trim());
+        audio.src = streamUrl;
+        audio.preload = "auto";
+        audio.load();
+
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              setIsBuffering(false);
+              setIsPlaying(true);
+            })
+            .catch((err) => {
+              console.log("[Audio] Direct play attempt deferred to canplay/loadeddata:", err);
+              const onCanPlay = () => {
+                audio?.play().catch((e) => console.log("[Audio] canplay play error:", e));
+                audio?.removeEventListener("canplay", onCanPlay);
+                audio?.removeEventListener("loadeddata", onCanPlay);
+              };
+              audio?.addEventListener("canplay", onCanPlay, { once: true });
+              audio?.addEventListener("loadeddata", onCanPlay, { once: true });
+            });
+        }
+      }
+    }
+  };
+
+  const handleTogglePlayPause = () => {
+    if (Platform.OS === "web" && audioRef.current) {
+      if (!audioRef.current.paused) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+      } else {
+        audioRef.current.play().catch((e) => console.log("[Audio] Resume error:", e));
+        setIsPlaying(true);
+      }
     } else {
-      setPlayingTrack(track);
-      playingTrackRef.current = track;
-      setIsPlaying(true);
-      setIsBuffering(true);
-      setAudioPos(0);
-      setAudioDur(0);
-      setSeekTarget(null);
+      setIsPlaying((p) => !p);
     }
   };
 
@@ -307,13 +464,15 @@ export default function MediaScreen() {
   };
 
   // Timeline scrubber calculation
-  const calculateSeekTarget = (clientXorLocationX: number, isPageCoords = false) => {
+  const calculateSeekTarget = (evt: any) => {
     const totalW = trackLayoutRef.current.width || 300;
-    const clickX = isPageCoords
-      ? clientXorLocationX - trackLayoutRef.current.pageX
-      : clientXorLocationX;
+    let clickX = evt.nativeEvent.locationX ?? 0;
+    const pageX = evt.nativeEvent.pageX;
+    if (typeof pageX === "number" && trackLayoutRef.current.pageX > 0) {
+      clickX = pageX - trackLayoutRef.current.pageX;
+    }
     const ratio = Math.max(0, Math.min(1, clickX / totalW));
-    const duration = audioDurRef.current;
+    const duration = audioDurRef.current || (audioRef.current?.duration || 0);
     if (duration > 0) {
       return ratio * duration;
     }
@@ -327,17 +486,26 @@ export default function MediaScreen() {
       onPanResponderGrant: (evt) => {
         isScrubbingRef.current = true;
         setIsScrubbing(true);
-        const target = calculateSeekTarget(evt.nativeEvent.locationX);
+        const target = calculateSeekTarget(evt);
         setScrubPos(target);
+        if (audioRef.current && isFinite(target)) {
+          audioRef.current.currentTime = target;
+        }
       },
       onPanResponderMove: (evt) => {
-        const target = calculateSeekTarget(evt.nativeEvent.locationX);
+        const target = calculateSeekTarget(evt);
         setScrubPos(target);
+        if (audioRef.current && isFinite(target)) {
+          audioRef.current.currentTime = target;
+        }
       },
       onPanResponderRelease: (evt) => {
-        const target = calculateSeekTarget(evt.nativeEvent.locationX);
+        const target = calculateSeekTarget(evt);
         setAudioPos(target);
         setSeekTarget(target);
+        if (audioRef.current && isFinite(target)) {
+          audioRef.current.currentTime = target;
+        }
         isScrubbingRef.current = false;
         setIsScrubbing(false);
       },
@@ -349,16 +517,24 @@ export default function MediaScreen() {
   ).current;
 
   const handleSeekBackward = () => {
-    const target = Math.max(0, audioPos - 10);
+    const current = audioRef.current ? audioRef.current.currentTime : audioPos;
+    const target = Math.max(0, current - 10);
     setAudioPos(target);
     setSeekTarget(target);
+    if (audioRef.current && isFinite(target)) {
+      audioRef.current.currentTime = target;
+    }
   };
 
   const handleSeekForward = () => {
-    const maxDur = audioDur > 0 ? audioDur : 3600;
-    const target = Math.min(maxDur, audioPos + 10);
+    const current = audioRef.current ? audioRef.current.currentTime : audioPos;
+    const maxDur = audioDur > 0 ? audioDur : (audioRef.current?.duration || 3600);
+    const target = Math.min(maxDur, current + 10);
     setAudioPos(target);
     setSeekTarget(target);
+    if (audioRef.current && isFinite(target)) {
+      audioRef.current.currentTime = target;
+    }
   };
 
   // Filter tracks by search query if entered
@@ -391,7 +567,7 @@ export default function MediaScreen() {
   const handleAudioEnded = () => {
     setIsBuffering(false);
 
-    // 1. If Auto-Play is OFF: Simply stop playback at the end of the song
+    // 1. If Auto-Play is OFF: Simply stop playback at end of song
     if (!autoPlayRef.current) {
       setIsPlaying(false);
       return;
@@ -404,27 +580,39 @@ export default function MediaScreen() {
     }
 
     // 2. Continuous Playback: Next track from active playlist
-    const playlist = visibleTracksRef.current;
+    const playlist = visibleTracksRef.current.length > 0
+      ? visibleTracksRef.current
+      : tracksRef.current;
+
+    if (!playlist || playlist.length === 0) {
+      setIsPlaying(false);
+      return;
+    }
+
     const currentKey = currentTrack.key || currentTrack.url;
     const currentIdx = playlist.findIndex((t) => (t.key || t.url) === currentKey);
 
-    // 3. Check if there is a next track in the currently active sub-tab list
+    // 3. Check if there is a next track in the currently active playlist
     if (currentIdx !== -1 && currentIdx < playlist.length - 1) {
       const nextTrack = playlist[currentIdx + 1];
       const nextTitle = (nextTrack.name || "").replace(/\.[^/.]+$/, "");
-      toast.show(
-        `Auto-playing next: ${nextTitle}`,
-        "info"
-      );
+      toast.show(`Auto-playing next: ${nextTitle}`, "info");
+      handlePlay(nextTrack);
+    } else if (playlist.length > 0) {
+      // Loop back to the first track so audio never stops abruptly
+      const nextTrack = playlist[0];
+      const nextTitle = (nextTrack.name || "").replace(/\.[^/.]+$/, "");
+      toast.show(`Auto-playing: ${nextTitle}`, "info");
       handlePlay(nextTrack);
     } else {
-      // 4. Last track in current list: Stop playback and reset to the beginning
       setIsPlaying(false);
       setAudioPos(0);
       setSeekTarget(0);
       toast.show("End of playlist reached", "info");
     }
   };
+
+  handleAudioEndedRef.current = handleAudioEnded;
 
   const handleNextTrack = () => {
     const playlist = visibleTracksRef.current;
@@ -666,7 +854,7 @@ export default function MediaScreen() {
                     styles.activePlayBtn,
                     pressed && styles.activePlayBtnPressed,
                   ]}
-                  onPress={() => setIsPlaying(!isPlaying)}
+                  onPress={handleTogglePlayPause}
                   accessibilityLabel={isPlaying ? "Pause Audio" : "Play Audio"}
                 >
                   {isBuffering ? (
@@ -721,13 +909,19 @@ export default function MediaScreen() {
             {/* Interactive Timeline Scrubber */}
             <View style={styles.progressWrap}>
               <View
+                ref={progressAreaRef}
                 style={styles.progressTouchArea}
                 {...panResponder.panHandlers}
                 onLayout={(e) => {
                   trackLayoutRef.current.width = e.nativeEvent.layout.width;
+                  progressAreaRef.current?.measure?.((x, y, width, height, pageX, pageY) => {
+                    if (pageX !== undefined && pageX > 0) {
+                      trackLayoutRef.current.pageX = pageX;
+                    }
+                  });
                 }}
               >
-                <View style={styles.progressTrack}>
+                <View style={styles.progressTrack} pointerEvents="none">
                   <View
                     style={[styles.progressFill, { width: `${progressPercent}%` }]}
                   />
@@ -841,7 +1035,12 @@ export default function MediaScreen() {
                   key={trackKey}
                   style={[styles.listRow, isCurrent && styles.listRowActive]}
                 >
-                  <View style={styles.rowLeft}>
+                  <Pressable
+                    style={styles.rowLeft}
+                    onPress={() => handlePlay(track)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Play ${displayTitle}`}
+                  >
                     {/* Number / Soundwave Indicator Badge */}
                     <View
                       style={[
@@ -882,7 +1081,7 @@ export default function MediaScreen() {
                         {` • ${currentSubTabs.find((s) => s.id === subTab)?.label || ""}`}
                       </Text>
                     </View>
-                  </View>
+                  </Pressable>
 
                   <View style={styles.rowActions}>
                     {/* Circular Play Button */}
@@ -934,8 +1133,8 @@ export default function MediaScreen() {
           )}
         </View>
 
-        {/* Global Continuous Playback Audio Engine */}
-        {activeAudioUrl ? (
+        {/* Global Continuous Playback Audio Engine (Native Expo-AV) */}
+        {Platform.OS !== "web" && activeAudioUrl ? (
           <AudioPlayer
             url={activeAudioUrl}
             isPlaying={isPlaying}

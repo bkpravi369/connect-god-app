@@ -107,14 +107,23 @@ export function AudioPlayer({
       console.log(`[AudioPlayer Web] Loading stream candidate (${index + 1}/${candidates.length}):`, targetUrl);
       
       onBufferingChangeRef.current?.(true);
+      audio.preload = 'auto';
       audio.src = targetUrl;
       audio.load();
 
       if (isPlayingRef.current) {
         audio.play().catch((err) => {
           console.log(`[AudioPlayer Web] Stream play error on candidate ${index + 1}:`, err);
-          // Try next candidate
-          loadCandidate(index + 1);
+          const onCanPlay = () => {
+            audio?.play().catch((e) => {
+              console.log(`[AudioPlayer Web] canplay retry failed on candidate ${index + 1}:`, e);
+              loadCandidate(index + 1);
+            });
+            audio?.removeEventListener('canplay', onCanPlay);
+            audio?.removeEventListener('loadeddata', onCanPlay);
+          };
+          audio?.addEventListener('canplay', onCanPlay, { once: true });
+          audio?.addEventListener('loadeddata', onCanPlay, { once: true });
         });
       }
     };

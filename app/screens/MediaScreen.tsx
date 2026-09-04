@@ -32,15 +32,12 @@ import {
 } from "lucide-react-native";
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from "@/lib/theme";
 import { useToast } from "@/components/ToastProvider";
-import { MediaTrack } from "@/constants/mediaTracks";
 import {
   MainMediaTab,
   SubTabKey,
-  fetchSubTabTracks,
-  getInitialSubTabTracks,
-  prefetchMainTabAudio,
+  CloudflareR2Item,
+  R2_FOLDER_MAPPING,
 } from "@/services/audioService";
-import { cleanMediaTitle, getCloudinaryDownloadUrl } from "@/services/mediaService";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { SoundwaveIndicator } from "@/components/SoundwaveIndicator";
 
@@ -107,15 +104,6 @@ const ALL_SUBTAB_KEYS: SubTabKey[] = [
   "ringtones",
 ];
 
-// Helper to initialize initial track dictionary synchronously for 0ms delay
-function buildInitialTrackMap(): Record<SubTabKey, MediaTrack[]> {
-  const map: Partial<Record<SubTabKey, MediaTrack[]>> = {};
-  for (const key of ALL_SUBTAB_KEYS) {
-    map[key] = getInitialSubTabTracks(key);
-  }
-  return map as Record<SubTabKey, MediaTrack[]>;
-}
-
 export default function MediaScreen() {
   const toast = useToast();
 
@@ -124,9 +112,9 @@ export default function MediaScreen() {
   const [subTab, setSubTab] = useState<SubTabKey>("panch_swarup");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // SubTab Track Cache Map (Initialized synchronously from cache)
-  const [trackMap, setTrackMap] = useState<Record<SubTabKey, MediaTrack[]>>(buildInitialTrackMap);
-  const [loadingMap, setLoadingMap] = useState<Partial<Record<SubTabKey, boolean>>>({});
+  // Cloudflare R2 Direct Tracks & Loading State
+  const [tracks, setTracks] = useState<CloudflareR2Item[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Animation values
@@ -134,8 +122,8 @@ export default function MediaScreen() {
   const skeletonPulse = useRef(new Animated.Value(0.3)).current;
 
   // Global Audio Player State (Completely persistent across tab switches)
-  const [playingTrack, setPlayingTrack] = useState<MediaTrack | null>(null);
-  const playingTrackRef = useRef<MediaTrack | null>(null);
+  const [playingTrack, setPlayingTrack] = useState<CloudflareR2Item | null>(null);
+  const playingTrackRef = useRef<CloudflareR2Item | null>(null);
   playingTrackRef.current = playingTrack;
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -145,18 +133,10 @@ export default function MediaScreen() {
   const [seekTarget, setSeekTarget] = useState<number | null>(null);
   const [audioFailed, setAudioFailed] = useState(false);
 
-  // Auto-play state: Default OFF to protect users' mobile data & Cloudinary bandwidth
+  // Auto-play state
   const [autoPlay, setAutoPlay] = useState(false);
   const autoPlayRef = useRef(false);
   autoPlayRef.current = autoPlay;
-
-  // Sub-tab category tracking for strict isolation
-  const subTabRef = useRef<SubTabKey>(subTab);
-  subTabRef.current = subTab;
-
-  const [playingSubTab, setPlayingSubTab] = useState<SubTabKey>(subTab);
-  const playingSubTabRef = useRef<SubTabKey>(subTab);
-  playingSubTabRef.current = playingSubTab;
 
   // Timeline scrub state
   const isScrubbingRef = useRef(false);
@@ -192,42 +172,38 @@ export default function MediaScreen() {
     return () => pulseLoop.stop();
   }, [skeletonPulse]);
 
-  const trackMapRef = useRef(trackMap);
-  trackMapRef.current = trackMap;
+  // 1. Direct Cloudflare R2 Folder Fetch Function
+  async function fetchTracks(folderPath: string) {
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `https://babacloudflare.bkpraveen2010.workers.dev/?folder=${encodeURIComponent(folderPath)}`
+      );
+      const data = await res.json();
 
-  // Load Cloudinary tracks for the active sub-tab with dynamic cache-busting
-  const loadSubTabAudio = useCallback(
-    async (key: SubTabKey, force = true) => {
-      const existing = trackMapRef.current[key];
-      if (!existing || existing.length === 0) {
-        setLoadingMap((prev) => ({ ...prev, [key]: true }));
+      // Crucial: The API returns the array directly, NOT wrapped inside { tracks: [...] }
+      if (Array.isArray(data)) {
+        setTracks(data);
+      } else {
+        setTracks([]);
       }
+    } catch (error) {
+      console.error("Error fetching audio files:", error);
+      setTracks([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      try {
-        const fetched = await fetchSubTabTracks(key, force);
-        if (Array.isArray(fetched)) {
-          setTrackMap((prev) => ({ ...prev, [key]: fetched }));
-        }
-      } catch (err) {
-        console.warn(`[MediaScreen] Failed to load ${key}:`, err);
-      } finally {
-        setLoadingMap((prev) => ({ ...prev, [key]: false }));
-      }
-    },
-    []
-  );
-
-  // Initial load: Fetch current subTab tracks and prefetch active main tab audio
+  // 2. Tab Change Trigger: Immediately execute whenever sub-tab or main tab changes
   useEffect(() => {
-    loadSubTabAudio(subTab, true);
-    prefetchMainTabAudio(mainTab, true).then((data) => {
-      if (data && Object.keys(data).length > 0) {
-        setTrackMap((prev) => ({ ...prev, ...data }));
-      }
-    });
-  }, [mainTab, subTab, loadSubTabAudio]);
+    const currentFolderPath = R2_FOLDER_MAPPING[subTab];
+    if (currentFolderPath) {
+      fetchTracks(currentFolderPath);
+    }
+  }, [subTab, mainTab]);
 
-  // Pull-to-refresh handler: refreshes all sub-tabs of the active main tab
+  // Pull-to-refresh handler
   const handleRefresh = async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
@@ -241,11 +217,13 @@ export default function MediaScreen() {
     ).start();
 
     try {
-      const updatedMap = await prefetchMainTabAudio(mainTab, true);
-      setTrackMap((prev) => ({ ...prev, ...updatedMap }));
+      const currentFolderPath = R2_FOLDER_MAPPING[subTab];
+      if (currentFolderPath) {
+        await fetchTracks(currentFolderPath);
+      }
       toast.show("Audio playlist refreshed", "success");
     } catch {
-      toast.show("Loaded cached audio files", "info");
+      toast.show("Loaded audio files", "info");
     } finally {
       setIsRefreshing(false);
       spinAnim.setValue(0);
@@ -258,29 +236,33 @@ export default function MediaScreen() {
     const firstSub = MEDIA_TABS_CONFIG[newMainTab].subTabs[0]?.id || "panch_swarup";
     setSubTab(firstSub);
     setSearchQuery("");
-    loadSubTabAudio(firstSub, true);
-    prefetchMainTabAudio(newMainTab, true);
+    const currentFolderPath = R2_FOLDER_MAPPING[firstSub];
+    if (currentFolderPath) {
+      fetchTracks(currentFolderPath);
+    }
   };
 
   const handleSubTabSelect = (newSubTab: SubTabKey) => {
     if (newSubTab === subTab) return;
     setSubTab(newSubTab);
     setSearchQuery("");
-    loadSubTabAudio(newSubTab, true);
+    const currentFolderPath = R2_FOLDER_MAPPING[newSubTab];
+    if (currentFolderPath) {
+      fetchTracks(currentFolderPath);
+    }
   };
 
-  const handlePlay = (track: MediaTrack) => {
+  const handlePlay = (track: CloudflareR2Item) => {
     if (!track.url || !track.url.trim()) {
       toast.show("Audio stream not available", "info");
       return;
     }
     setAudioFailed(false);
-    if (playingTrack?.id === track.id) {
+    const trackId = track.key || track.url;
+    const currentId = playingTrack ? (playingTrack.key || playingTrack.url) : null;
+    if (currentId === trackId) {
       setIsPlaying((p) => !p);
     } else {
-      const trackSubTab = (track.subCategory as SubTabKey) || subTab;
-      setPlayingSubTab(trackSubTab);
-      playingSubTabRef.current = trackSubTab;
       setPlayingTrack(track);
       playingTrackRef.current = track;
       setIsPlaying(true);
@@ -291,12 +273,14 @@ export default function MediaScreen() {
     }
   };
 
-  const handleDownload = async (track: MediaTrack) => {
+  const handleDownload = async (track: CloudflareR2Item) => {
     if (!track.url || !track.url.trim()) {
       toast.show("Download link not available", "info");
       return;
     }
-    const cleanTitle = cleanMediaTitle(track.title);
+    const cleanTitle = track.name
+      ? track.name.replace(/\.[^/.]+$/, "")
+      : (track.key ? track.key.split("/").pop()?.replace(/\.[^/.]+$/, "") : "Audio Track");
     const downloadUrl = track.url.trim();
 
     toast.show(`Downloading: ${cleanTitle}`, "info");
@@ -377,46 +361,18 @@ export default function MediaScreen() {
     setSeekTarget(target);
   };
 
-  // Get active subTab tracks with fallback
-  const rawSubTabTracks = trackMap[subTab] || getInitialSubTabTracks(subTab);
-  const isLoadingActiveSubTab = !!loadingMap[subTab] && rawSubTabTracks.length === 0;
-
   // Filter tracks by search query if entered
   const visibleTracks = useMemo(() => {
-    if (!searchQuery.trim()) return rawSubTabTracks;
+    if (!searchQuery.trim()) return tracks;
     const q = searchQuery.toLowerCase().trim();
-    return rawSubTabTracks.filter((t) => {
-      const title = cleanMediaTitle(t.title).toLowerCase();
-      const speaker = (t.speaker || "").toLowerCase();
-      return title.includes(q) || speaker.includes(q);
+    return tracks.filter((t) => {
+      const cleanTitle = (t.name || "").replace(/\.[^/.]+$/, "").toLowerCase();
+      return cleanTitle.includes(q);
     });
-  }, [rawSubTabTracks, searchQuery]);
+  }, [tracks, searchQuery]);
 
   const visibleTracksRef = useRef(visibleTracks);
   visibleTracksRef.current = visibleTracks;
-
-  // Category-isolated playlist resolver strictly for the playing track's sub-tab
-  const getPlayingSubTabPlaylist = useCallback((): MediaTrack[] => {
-    const currentTrack = playingTrackRef.current;
-    if (!currentTrack) return visibleTracksRef.current;
-
-    const currentSubTabKey =
-      (currentTrack.subCategory as SubTabKey) ||
-      playingSubTabRef.current ||
-      subTabRef.current;
-
-    if (
-      subTabRef.current === currentSubTabKey &&
-      visibleTracksRef.current.some((t) => t.id === currentTrack.id)
-    ) {
-      return visibleTracksRef.current;
-    }
-
-    return (
-      trackMapRef.current[currentSubTabKey] ||
-      getInitialSubTabTracks(currentSubTabKey)
-    );
-  }, []);
 
   const handleToggleAutoPlay = () => {
     setAutoPlay((prev) => {
@@ -447,31 +403,34 @@ export default function MediaScreen() {
       return;
     }
 
-    // 2. Safety & Category Isolation: Strictly selected from the same sub-tab playlist only
-    const playlist = getPlayingSubTabPlaylist();
-    const currentIdx = playlist.findIndex((t) => t.id === currentTrack.id);
+    // 2. Continuous Playback: Next track from active playlist
+    const playlist = visibleTracksRef.current;
+    const currentKey = currentTrack.key || currentTrack.url;
+    const currentIdx = playlist.findIndex((t) => (t.key || t.url) === currentKey);
 
     // 3. Check if there is a next track in the currently active sub-tab list
     if (currentIdx !== -1 && currentIdx < playlist.length - 1) {
       const nextTrack = playlist[currentIdx + 1];
+      const nextTitle = (nextTrack.name || "").replace(/\.[^/.]+$/, "");
       toast.show(
-        `Auto-playing next: ${cleanMediaTitle(nextTrack.title)}`,
+        `Auto-playing next: ${nextTitle}`,
         "info"
       );
       handlePlay(nextTrack);
     } else {
-      // 4. Last track in current list: Stop playback and reset to the beginning (do not loop to other sub-tabs)
+      // 4. Last track in current list: Stop playback and reset to the beginning
       setIsPlaying(false);
       setAudioPos(0);
       setSeekTarget(0);
-      toast.show("End of sub-tab playlist reached", "info");
+      toast.show("End of playlist reached", "info");
     }
   };
 
   const handleNextTrack = () => {
-    const playlist = getPlayingSubTabPlaylist();
+    const playlist = visibleTracksRef.current;
     if (!playingTrack || playlist.length === 0) return;
-    const idx = playlist.findIndex((t) => t.id === playingTrack.id);
+    const currentKey = playingTrack.key || playingTrack.url;
+    const idx = playlist.findIndex((t) => (t.key || t.url) === currentKey);
     if (idx !== -1 && idx < playlist.length - 1) {
       handlePlay(playlist[idx + 1]);
     } else if (playlist.length > 0) {
@@ -480,9 +439,10 @@ export default function MediaScreen() {
   };
 
   const handlePreviousTrack = () => {
-    const playlist = getPlayingSubTabPlaylist();
+    const playlist = visibleTracksRef.current;
     if (!playingTrack || playlist.length === 0) return;
-    const idx = playlist.findIndex((t) => t.id === playingTrack.id);
+    const currentKey = playingTrack.key || playingTrack.url;
+    const idx = playlist.findIndex((t) => (t.key || t.url) === currentKey);
     if (idx > 0) {
       handlePlay(playlist[idx - 1]);
     } else if (playlist.length > 0) {
@@ -592,7 +552,7 @@ export default function MediaScreen() {
           >
             {currentSubTabs.map((sub) => {
               const isSubActive = subTab === sub.id;
-              const count = (trackMap[sub.id] || []).length;
+              const count = isSubActive ? tracks.length : 0;
 
               return (
                 <Pressable
@@ -673,14 +633,12 @@ export default function MediaScreen() {
                   </Text>
                 </View>
                 <Text style={styles.activeTitle} numberOfLines={1}>
-                  {cleanMediaTitle(playingTrack.title)}
+                  {playingTrack.name.replace(/\.[^/.]+$/, "")}
                 </Text>
                 <Text style={styles.activeSubtitle} numberOfLines={1}>
-                  {playingTrack.speaker ||
-                    playingTrack.category.toUpperCase()}
-                  {playingTrack.subCategory
-                    ? ` • ${playingTrack.subCategory.replace("_", " ").toUpperCase()}`
-                    : ""}
+                  {playingTrack.key?.includes("/")
+                    ? playingTrack.key.split("/")[0].toUpperCase()
+                    : MEDIA_TABS_CONFIG[mainTab].label.toUpperCase()}
                 </Text>
               </View>
 
@@ -845,7 +803,7 @@ export default function MediaScreen() {
 
         {/* ── [4. AUDIO TRACKS LIST & SKELETONS] ── */}
         <View style={styles.listWrap}>
-          {isLoadingActiveSubTab ? (
+          {loading ? (
             // Animated Skeleton Loader
             [1, 2, 3, 4, 5].map((i) => (
               <Animated.View
@@ -872,14 +830,15 @@ export default function MediaScreen() {
             </View>
           ) : (
             visibleTracks.map((track, idx) => {
-              const isCurrent = playingTrack?.id === track.id;
+              const trackKey = track.key || track.url;
+              const isCurrent = (playingTrack?.key || playingTrack?.url) === trackKey;
               const showPause = isCurrent && isPlaying;
               const numberStr = String(idx + 1).padStart(2, "0");
-              const displayTitle = cleanMediaTitle(track.title);
+              const displayTitle = track.name.replace(/\.[^/.]+$/, "");
 
               return (
                 <View
-                  key={track.id}
+                  key={trackKey}
                   style={[styles.listRow, isCurrent && styles.listRowActive]}
                 >
                   <View style={styles.rowLeft}>
@@ -919,11 +878,8 @@ export default function MediaScreen() {
                         {displayTitle}
                       </Text>
                       <Text style={styles.rowSubtitle} numberOfLines={1}>
-                        {track.speaker ||
-                          MEDIA_TABS_CONFIG[mainTab].label.toUpperCase()}
-                        {track.subCategory
-                          ? ` • ${track.subCategory.replace(/_/g, " ").toUpperCase()}`
-                          : ""}
+                        {MEDIA_TABS_CONFIG[mainTab].label}
+                        {` • ${currentSubTabs.find((s) => s.id === subTab)?.label || ""}`}
                       </Text>
                     </View>
                   </View>

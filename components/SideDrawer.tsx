@@ -5,6 +5,8 @@ import {
   Dimensions,
   Image,
   Linking,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -26,12 +28,58 @@ import {
   MessageCircle,
   Send,
   Image as ImageIcon,
+  User,
+  Download,
+  Sparkles,
+  FileText,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import { APP_NAME, APP_TAGLINE, APP_LOGO, CHANNELS, SocialLinks, DEFAULT_SOCIAL_LINKS, STORAGE_KEYS } from '@/lib/constants';
 import { getJSON } from '@/lib/storage';
 import { BKSunEmblem, ChannelLogo } from '@/components/Logos';
+
+export type ProfileData = {
+  name: string;
+  subtitle: string;
+  designation: string;
+  cvUrl: string;
+  phone?: string;
+  email?: string;
+  bio: string;
+  highlights: string[];
+};
+
+export const PROFILES: ProfileData[] = [
+  {
+    name: 'BK Sheeba',
+    subtitle: 'Assistant Director, BK Calicut',
+    designation: 'Assistant Director, Brahma Kumaris Calicut',
+    cvUrl: '/profiles/bk-sheeba-cv.pdf',
+    phone: '989556762',
+    email: 'brahmakumarisheeba@gmail.com',
+    bio: 'Senior Faculty of Rajayoga at Prajapita Brahma Kumaris Ishwariya Vishwa Vidyalaya for over 30 years. Renowned spiritual speaker, television personality, and youth motivator.',
+    highlights: [
+      'Senior Rajayoga Faculty (30+ Years)',
+      'Trained cadets at Indian Naval Academy & IIM Calicut',
+      'Masters in Crisis & Self Management (Annamalai University)',
+    ],
+  },
+  {
+    name: 'BK Sheeja',
+    subtitle: 'Spiritual Teacher & Counsellor',
+    designation: 'Spiritual Teacher & Counsellor',
+    cvUrl: '/profiles/bk-sheeja-cv.pdf',
+    phone: '09895777017',
+    email: 'bksheeja71@gmail.com',
+    bio: 'Dedicated spiritual teacher, counsellor, and Rajyoga practitioner for over 34 years. Expert in emotional wellness, stress-free lifestyle, and mind meditation.',
+    highlights: [
+      '34 Years of Rajyoga Meditation Practitioner Experience',
+      'M.Sc in Value Education & Spirituality',
+      'Renowned Speaker & Stress Management Counsellor',
+    ],
+  },
+];
 
 const SCREEN_W = Math.min(Dimensions.get('window').width, 440);
 const DRAWER_W = Math.min(SCREEN_W * 0.84, 360);
@@ -115,6 +163,16 @@ export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMed
   const overlayOpacity = React.useRef(new Animated.Value(0)).current;
   const [expandedChannel, setExpandedChannel] = useState<string | null>(null);
   const [links, setLinks] = useState<SocialLinks>(DEFAULT_SOCIAL_LINKS);
+  const [selectedProfile, setSelectedProfile] = useState<ProfileData | null>(null);
+
+  const handleOpenCV = (url: string) => {
+    if (!url) return;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.open(url, '_blank');
+      return;
+    }
+    Linking.openURL(url).catch(() => {});
+  };
 
   useEffect(() => {
     const stored = getJSON<SocialLinks>(STORAGE_KEYS.socialLinks, DEFAULT_SOCIAL_LINKS);
@@ -341,35 +399,27 @@ export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMed
             <ChevronRight color={COLORS.neutral[300]} size={18} strokeWidth={2} />
           </Pressable>
 
-          {/* ── Connect with us (social links) ────────────────────── */}
-          <Text style={[styles.sectionLabel, { marginTop: SPACING.xl }]}>CONNECT WITH US</Text>
-
-          {/* YouTube channels (multiple) */}
-          {(links?.youtubeChannels || []).filter((c) => c?.url).length > 0 && (
-            <View style={styles.socialSection}>
-              <Text style={styles.socialSubLabel}>YouTube Channels</Text>
-              {(links?.youtubeChannels || []).filter((c) => c?.url).map((ch) => (
-                <Pressable
-                  key={ch.id}
-                  style={({ pressed }) => [styles.socialLinkRow, pressed && styles.rowPressed]}
-                  onPress={() => openLink(ch.url)}
-                >
-                  <View style={[styles.socialLinkIcon, { backgroundColor: COLORS.error[500] + '18' }]}>
-                    {ch.logo ? (
-                      <Image source={{ uri: ch.logo }} style={styles.socialLinkLogo} resizeMode="cover" />
-                    ) : (
-                      <Youtube color={COLORS.error[500]} size={18} strokeWidth={2} />
-                    )}
-                  </View>
-                  <Text style={styles.socialLinkText} numberOfLines={1}>{ch.label || 'YouTube Channel'}</Text>
-                  <ChevronRight color={COLORS.neutral[300]} size={16} strokeWidth={2} />
-                </Pressable>
-              ))}
-            </View>
-          )}
+          {/* ── Profiles ────────────────────────────────────────────── */}
+          <Text style={[styles.sectionLabel, { marginTop: SPACING.xl }]}>PROFILES</Text>
+          {PROFILES.map((p) => (
+            <Pressable
+              key={p.name}
+              style={({ pressed }) => [styles.profileRow, pressed && styles.rowPressed]}
+              onPress={() => setSelectedProfile(p)}
+            >
+              <View style={styles.profileAvatarWrap}>
+                <User color={COLORS.primary[600]} size={20} strokeWidth={2} />
+              </View>
+              <View style={styles.profileMeta}>
+                <Text style={styles.profileName}>{p.name}</Text>
+                <Text style={styles.profileSub} numberOfLines={1}>{p.subtitle}</Text>
+              </View>
+              <ChevronRight color={COLORS.neutral[300]} size={18} strokeWidth={2} />
+            </Pressable>
+          ))}
 
           {/* Other social platforms */}
-          <View style={styles.socialSection}>
+          <View style={[styles.socialSection, { marginTop: SPACING.sm }]}>
             <Text style={styles.socialSubLabel}>Social Media</Text>
             <View style={styles.socialRow}>
               <SocialBtn icon={<Instagram color="#E1306C" size={18} strokeWidth={2} />} bg="#E1306C18" onPress={() => openLink(links?.instagram || '')} />
@@ -397,6 +447,68 @@ export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMed
           </View>
         </ScrollView>
       </Animated.View>
+
+      {/* ── Profile Details Modal ───────────────────────────────── */}
+      <Modal
+        visible={!!selectedProfile}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedProfile(null)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setSelectedProfile(null)}
+        >
+          {selectedProfile && (
+            <Pressable
+              style={styles.profileModalCard}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={styles.profileModalHeader}>
+                <View style={styles.profileModalAvatar}>
+                  <User color={COLORS.primary[600]} size={28} strokeWidth={2.2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalName}>{selectedProfile.name}</Text>
+                  <Text style={styles.modalDesignation}>{selectedProfile.subtitle}</Text>
+                </View>
+                <Pressable
+                  style={styles.modalCloseBtn}
+                  onPress={() => setSelectedProfile(null)}
+                  hitSlop={8}
+                  accessibilityLabel="Close profile details"
+                >
+                  <X color={COLORS.neutral[500]} size={18} strokeWidth={2.5} />
+                </Pressable>
+              </View>
+
+              <Text style={styles.modalBio}>{selectedProfile.bio}</Text>
+
+              <View style={styles.modalHighlights}>
+                <Text style={styles.highlightsHeader}>KEY HIGHLIGHTS</Text>
+                {selectedProfile.highlights.map((h, i) => (
+                  <View key={i} style={styles.modalHighlightRow}>
+                    <Sparkles color="#d97706" size={14} strokeWidth={2} style={{ marginTop: 2 }} />
+                    <Text style={styles.modalHighlightText}>{h}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  styles.downloadCvBtn,
+                  pressed && styles.downloadCvBtnPressed,
+                ]}
+                onPress={() => handleOpenCV(selectedProfile.cvUrl)}
+              >
+                <FileText color="#ffffff" size={18} strokeWidth={2.2} />
+                <Text style={styles.downloadCvBtnText}>Download CV (PDF)</Text>
+                <Download color="#ffffff" size={16} strokeWidth={2.2} />
+              </Pressable>
+            </Pressable>
+          )}
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -712,5 +824,148 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.sansMedium,
     fontSize: 13,
     color: COLORS.neutral[800],
+  },
+  // Profile styles
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm + 2,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: COLORS.neutral[50],
+    borderRadius: RADIUS.lg,
+    marginBottom: SPACING.sm,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+    gap: SPACING.md,
+  },
+  profileAvatarWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileMeta: {
+    flex: 1,
+  },
+  profileName: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 14,
+    color: COLORS.neutral[900],
+  },
+  profileSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    color: COLORS.neutral[500],
+    marginTop: 1,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.lg,
+  },
+  profileModalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: COLORS.neutral[0],
+    borderRadius: RADIUS.xl,
+    padding: SPACING.xl,
+    ...SHADOWS.lg,
+  },
+  profileModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  profileModalAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1.5,
+    borderColor: '#fed7aa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.neutral[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalName: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 18,
+    color: COLORS.neutral[900],
+  },
+  modalDesignation: {
+    fontFamily: FONTS.sansMedium,
+    fontSize: 13,
+    color: COLORS.primary[600],
+    marginTop: 2,
+  },
+  modalBio: {
+    fontFamily: FONTS.sans,
+    fontSize: 13,
+    lineHeight: 20,
+    color: COLORS.neutral[600],
+    marginBottom: SPACING.md,
+  },
+  modalHighlights: {
+    backgroundColor: COLORS.neutral[50],
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.lg,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+    gap: SPACING.xs + 2,
+  },
+  highlightsHeader: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 11,
+    color: COLORS.neutral[400],
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  modalHighlightRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.xs + 2,
+  },
+  modalHighlightText: {
+    flex: 1,
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    lineHeight: 18,
+    color: COLORS.neutral[700],
+  },
+  downloadCvBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    backgroundColor: '#dc2626',
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
+    ...SHADOWS.md,
+  },
+  downloadCvBtnPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.98 }],
+  },
+  downloadCvBtnText: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 14,
+    color: '#ffffff',
+    letterSpacing: 0.3,
   },
 });

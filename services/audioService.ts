@@ -375,7 +375,7 @@ export function getAudioStreamCandidates(urlOrFileId: string): string[] {
 
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     const candidates: string[] = [];
-    const encoded = encodeURI(trimmed);
+    const encoded = encodeURI(decodeURI(trimmed));
     candidates.push(encoded);
     if (encoded !== trimmed) {
       candidates.push(trimmed);

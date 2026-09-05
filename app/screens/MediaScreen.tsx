@@ -389,7 +389,7 @@ export default function MediaScreen() {
       }
 
       if (audio) {
-        const streamUrl = encodeURI(track.url.trim());
+        const streamUrl = encodeURI(decodeURI(track.url.trim()));
         audio.src = streamUrl;
         audio.preload = "auto";
         audio.load();
@@ -438,13 +438,13 @@ export default function MediaScreen() {
     const cleanTitle = track.name
       ? track.name.replace(/\.[^/.]+$/, "")
       : (track.key ? track.key.split("/").pop()?.replace(/\.[^/.]+$/, "") : "Audio Track");
-    const downloadUrl = track.url.trim();
+    const downloadUrl = encodeURI(decodeURI(track.url.trim()));
 
     toast.show(`Downloading: ${cleanTitle}`, "info");
 
     if (Platform.OS === "web" && typeof document !== "undefined") {
       const a = document.createElement("a");
-      a.href = encodeURI(downloadUrl);
+      a.href = downloadUrl;
       a.download = `${cleanTitle}.mp3`;
       a.target = "_blank";
       a.rel = "noopener noreferrer";

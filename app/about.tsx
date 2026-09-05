@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Dimensions,
+  Image,
   Linking,
   Platform,
   Pressable,
@@ -28,7 +29,8 @@ import {
   Mail,
 } from 'lucide-react-native';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
-import { BKSunEmblem } from '@/components/Logos';
+
+const BK_OFFICIAL_LOGO = require('@/assets/bk-official-logo.png');
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -67,12 +69,16 @@ export default function AboutUsScreen() {
             About Brahma Kumaris
           </Text>
           <Text style={styles.headerSub} numberOfLines={1}>
-            പ്രജാപതി ബ്രഹ്മാകുമാരീസ് ഈശ്വരീയ വിശ്വവിദ്യാലയം
+            പ്രജാപിതാ ബ്രഹ്മാകുമാരീസ് ഈശ്വരീയ വിശ്വവിദ്യാലയം
           </Text>
         </View>
 
         <View style={styles.headerEmblemWrap}>
-          <BKSunEmblem size={30} />
+          <Image
+            source={BK_OFFICIAL_LOGO}
+            style={styles.headerEmblemImg}
+            resizeMode="contain"
+          />
         </View>
       </View>
 
@@ -85,7 +91,11 @@ export default function AboutUsScreen() {
         <View style={styles.heroCard}>
           <View style={styles.heroEmblemRow}>
             <View style={styles.sunEmblemCircle}>
-              <BKSunEmblem size={52} />
+              <Image
+                source={BK_OFFICIAL_LOGO}
+                style={styles.heroEmblemImg}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.heroTagBadge}>
               <Sparkles color="#D4AF37" size={13} strokeWidth={2.5} />
@@ -406,12 +416,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   headerEmblemWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  headerEmblemImg: {
+    width: 28,
+    height: 28,
   },
 
   // ── Hero Card ───────────────────────────────────────
@@ -430,15 +445,20 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
   },
   sunEmblemCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: '#FFFBF0',
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#FFFDF5',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 1.6,
     borderColor: '#D4AF37',
+    overflow: 'hidden',
     ...SHADOWS.sm,
+  },
+  heroEmblemImg: {
+    width: 54,
+    height: 54,
   },
   heroTagBadge: {
     flexDirection: 'row',

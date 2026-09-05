@@ -80,7 +80,7 @@ export const R2_FOLDER_MAPPING: Record<SubTabKey, string> = {
   // [Music]
   function_music: 'function-music',
   own_music: 'own-music ',
-  meditation_music: 'meditation-music',
+  meditation_music: 'Meditation-music',
 
   // [Ringtone]
   ringtones: 'ringtoned-hindi',
@@ -142,7 +142,7 @@ export const R2_SUBTAB_CONFIG: Record<SubTabKey, StrictSubTabConfig> = {
     category: 'music',
   },
   meditation_music: {
-    folder: 'meditation-music',
+    folder: 'Meditation-music',
     category: 'music',
   },
 

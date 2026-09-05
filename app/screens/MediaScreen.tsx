@@ -322,15 +322,15 @@ export default function MediaScreen() {
         return;
       }
 
-      // Dedicated dynamic fetching for Meditation Music (?folder=meditation-music with fallback to meditation music)
+      // Dedicated dynamic fetching for Meditation Music (?folder=Meditation-music)
       if (targetSubTab === "meditation_music") {
         let res = await fetch(
-          `https://babacloudflare.bkpraveen2010.workers.dev/?folder=meditation-music`
+          `https://babacloudflare.bkpraveen2010.workers.dev/?folder=Meditation-music`
         );
         let data = await res.json();
         if (!Array.isArray(data) || data.length === 0) {
           const resFallback = await fetch(
-            `https://babacloudflare.bkpraveen2010.workers.dev/?folder=${encodeURIComponent("meditation music")}`
+            `https://babacloudflare.bkpraveen2010.workers.dev/?folder=meditation-music`
           );
           const dataFallback = await resFallback.json();
           if (Array.isArray(dataFallback) && dataFallback.length > 0) {

@@ -39,45 +39,6 @@ export interface CloudflareR2Item {
   url: string;
 }
 
-export const CLOUDINARY_OWN_TUNE_TRACKS: CloudflareR2Item[] = [
-  {
-    key: 'own tune/04-Maanava-hridaya.mp3',
-    name: 'Supreme Light Theme Tune.mp3',
-    size: 9133963,
-    url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/v1787367169/04-Maanava-hridaya.mp3',
-  },
-  {
-    key: 'own tune/07-baba-en-nathane_1.mp3',
-    name: 'Baba Milan Devotional Melody.mp3',
-    size: 8388608,
-    url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/v1787367169/07-baba-en-nathane_1.mp3',
-  },
-  {
-    key: 'own tune/02-Rajyoga_Meditation_Music-2.mp3',
-    name: 'Paramdham Divine Flute Tune.mp3',
-    size: 5242880,
-    url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/02-Rajyoga_Meditation_Music-2.mp3',
-  },
-  {
-    key: 'own tune/01_Awakning.mp3',
-    name: 'Amritvela Awakening Melody.mp3',
-    size: 8419328,
-    url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/01_Awakning.mp3',
-  },
-  {
-    key: 'own tune/02_Moving_On.mp3',
-    name: 'Shanti Ki Kiran Spiritual Tune.mp3',
-    size: 6144000,
-    url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/02_Moving_On.mp3',
-  },
-  {
-    key: 'own tune/01_Letting_Go.mp3',
-    name: 'Kozhikode Center Special Tune.mp3',
-    size: 7168000,
-    url: 'https://res.cloudinary.com/tb5bmwd5/video/upload/01_Letting_Go.mp3',
-  },
-];
-
 export interface StrictSubTabConfig {
   folder: string;
   category: 'song' | 'commentary' | 'music' | 'ringtone';
@@ -114,7 +75,7 @@ export const R2_FOLDER_MAPPING: Record<SubTabKey, string> = {
   malayalam: 'song-malayalam',
   om_and_bhog: 'om-bhorg',
   om_and_bhorg: 'om-bhorg',
-  own_tunes: 'own-tune',
+  own_tunes: 'own-tunes',
 
   // [Music]
   function_music: 'function-music',
@@ -122,9 +83,9 @@ export const R2_FOLDER_MAPPING: Record<SubTabKey, string> = {
   meditation_music: 'meditation-music',
 
   // [Ringtone]
-  ringtones: 'ringtones',
-  ringtone_hindi: 'ringtones',
-  ringtone_malayalam: 'ringtones',
+  ringtones: 'ringtoned-hindi',
+  ringtone_hindi: 'ringtoned-hindi',
+  ringtone_malayalam: 'ringtones-malayalam',
 };
 
 export const R2_SUBTAB_CONFIG: Record<SubTabKey, StrictSubTabConfig> = {
@@ -167,7 +128,7 @@ export const R2_SUBTAB_CONFIG: Record<SubTabKey, StrictSubTabConfig> = {
     category: 'song',
   },
   own_tunes: {
-    folder: 'own-tune',
+    folder: 'own-tunes',
     category: 'song',
   },
 
@@ -187,15 +148,15 @@ export const R2_SUBTAB_CONFIG: Record<SubTabKey, StrictSubTabConfig> = {
 
   // [Ringtone]
   ringtones: {
-    folder: 'ringtones',
+    folder: 'ringtoned-hindi',
     category: 'ringtone',
   },
   ringtone_hindi: {
-    folder: 'ringtones',
+    folder: 'ringtoned-hindi',
     category: 'ringtone',
   },
   ringtone_malayalam: {
-    folder: 'ringtones',
+    folder: 'ringtones-malayalam',
     category: 'ringtone',
   },
 };
@@ -205,7 +166,8 @@ export const R2_SUBTAB_CONFIG: Record<SubTabKey, StrictSubTabConfig> = {
  */
 export function resolveSubTabKey(mainTab: MainMediaTab, subTabId: string): SubTabKey {
   if (mainTab === 'ringtones') {
-    return 'ringtones';
+    if (subTabId === 'ringtone_malayalam' || subTabId === 'malayalam') return 'ringtone_malayalam';
+    return 'ringtone_hindi';
   }
   if (mainTab === 'songs') {
     if (subTabId === 'panch_swarup' || subTabId === 'panch-Swarup') return 'panch_swarup';
@@ -280,9 +242,6 @@ export function mapR2ItemsToTracks(
  * Synchronous cached tracks getter - returns cached tracks for this sub-tab
  */
 export function getInitialSubTabTracks(subTab: SubTabKey): MediaTrack[] {
-  if (subTab === 'own_tunes') {
-    return OWN_TUNES_TRACKS;
-  }
   const storageKey = `r2_tracks_v2_${subTab}`;
   const cached = getJSON<MediaTrack[] | null>(storageKey, null);
   if (Array.isArray(cached)) {
@@ -298,10 +257,6 @@ export async function fetchSubTabTracks(
   subTab: SubTabKey,
   forceRefresh = false
 ): Promise<MediaTrack[]> {
-  if (subTab === 'own_tunes') {
-    return OWN_TUNES_TRACKS;
-  }
-
   const folderPath = R2_FOLDER_MAPPING[subTab];
   if (!folderPath) return [];
 
@@ -325,7 +280,21 @@ export async function fetchSubTabTracks(
     });
 
     if (res.ok) {
-      const items: CloudflareR2Item[] = await res.json();
+      let items: CloudflareR2Item[] = await res.json();
+      if ((!Array.isArray(items) || items.length === 0) && subTab === 'ringtone_hindi') {
+        const fallbackRes = await fetch(`${WORKER_BASE_URL}/?folder=ringtones-hindi`);
+        if (fallbackRes.ok) {
+          const fallbackItems = await fallbackRes.json();
+          if (Array.isArray(fallbackItems) && fallbackItems.length > 0) items = fallbackItems;
+        }
+      }
+      if ((!Array.isArray(items) || items.length === 0) && subTab === 'own_tunes') {
+        const fallbackRes = await fetch(`${WORKER_BASE_URL}/?folder=own-tune`);
+        if (fallbackRes.ok) {
+          const fallbackItems = await fallbackRes.json();
+          if (Array.isArray(fallbackItems) && fallbackItems.length > 0) items = fallbackItems;
+        }
+      }
       if (Array.isArray(items)) {
         const tracks = mapR2ItemsToTracks(items, subTab);
         setJSON(storageKey, tracks);
@@ -355,7 +324,7 @@ export async function prefetchMainTabAudio(
     songs: ['panch_swarup', 'hindi', 'malayalam', 'om_and_bhog', 'own_tunes'],
     commentary: ['sheeba_sister', 'sheeja_sister', 'others'],
     music: ['function_music', 'own_music'],
-    ringtones: ['ringtones'],
+    ringtones: ['ringtone_hindi', 'ringtone_malayalam'],
   };
 
   const keys = subTabsByMain[mainTab] || [];

@@ -37,7 +37,6 @@ import {
   SubTabKey,
   CloudflareR2Item,
   R2_FOLDER_MAPPING,
-  CLOUDINARY_OWN_TUNE_TRACKS,
 } from "@/services/audioService";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { SoundwaveIndicator } from "@/components/SoundwaveIndicator";
@@ -88,7 +87,8 @@ export const MEDIA_TABS_CONFIG: Record<
     label: "Ringtone",
     icon: Volume2,
     subTabs: [
-      { id: "ringtones", label: "Ringtones" },
+      { id: "ringtone_hindi", label: "Hindi" },
+      { id: "ringtone_malayalam", label: "Malayalam" },
     ],
   },
 };
@@ -104,7 +104,8 @@ const ALL_SUBTAB_KEYS: SubTabKey[] = [
   "others",
   "function_music",
   "own_music",
-  "ringtones",
+  "ringtone_hindi",
+  "ringtone_malayalam",
 ];
 
 export default function MediaScreen() {
@@ -268,29 +269,58 @@ export default function MediaScreen() {
     return () => pulseLoop.stop();
   }, [skeletonPulse]);
 
-  // 1. Direct Cloudflare R2 Folder Fetch Function with Cloudinary Own Tune support
+  // 1. Direct Cloudflare R2 Folder Fetch Function
   async function fetchTracks(folderPath: string, targetSubTab: SubTabKey = subTab) {
     try {
       setLoading(true);
 
-      // Connect "Own Tune" to the Cloudinary folder containing the 6 audio tracks
-      if (targetSubTab === "own_tunes") {
-        try {
-          const res = await fetch(
-            `https://babacloudflare.bkpraveen2010.workers.dev/?folder=${encodeURIComponent(folderPath)}`
+      // Dedicated dynamic fetching for Hindi ringtones (?folder=ringtoned-hindi with fallback to ringtones-hindi)
+      if (targetSubTab === "ringtone_hindi") {
+        let res = await fetch(
+          `https://babacloudflare.bkpraveen2010.workers.dev/?folder=ringtoned-hindi`
+        );
+        let data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          const resFallback = await fetch(
+            `https://babacloudflare.bkpraveen2010.workers.dev/?folder=ringtones-hindi`
           );
-          const data = await res.json();
-          if (Array.isArray(data) && data.length > 0) {
-            setTracks(data);
-            return;
+          const dataFallback = await resFallback.json();
+          if (Array.isArray(dataFallback) && dataFallback.length > 0) {
+            data = dataFallback;
           }
-        } catch {
-          // fallback to Cloudinary tracks
         }
-        setTracks(CLOUDINARY_OWN_TUNE_TRACKS);
+        if (Array.isArray(data)) {
+          setTracks(data);
+        } else {
+          setTracks([]);
+        }
         return;
       }
 
+      // Dedicated dynamic fetching for Own Tune (?folder=own-tunes with fallback to own-tune)
+      if (targetSubTab === "own_tunes") {
+        let res = await fetch(
+          `https://babacloudflare.bkpraveen2010.workers.dev/?folder=own-tunes`
+        );
+        let data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          const resFallback = await fetch(
+            `https://babacloudflare.bkpraveen2010.workers.dev/?folder=own-tune`
+          );
+          const dataFallback = await resFallback.json();
+          if (Array.isArray(dataFallback) && dataFallback.length > 0) {
+            data = dataFallback;
+          }
+        }
+        if (Array.isArray(data)) {
+          setTracks(data);
+        } else {
+          setTracks([]);
+        }
+        return;
+      }
+
+      // Standard dynamic fetching for all other categories (Malayalam ringtones, Songs, Commentaries, Music)
       const res = await fetch(
         `https://babacloudflare.bkpraveen2010.workers.dev/?folder=${encodeURIComponent(folderPath)}`
       );
@@ -304,11 +334,7 @@ export default function MediaScreen() {
       }
     } catch (error) {
       console.error("Error fetching audio files:", error);
-      if (targetSubTab === "own_tunes") {
-        setTracks(CLOUDINARY_OWN_TUNE_TRACKS);
-      } else {
-        setTracks([]);
-      }
+      setTracks([]);
     } finally {
       setLoading(false);
     }

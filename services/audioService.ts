@@ -184,6 +184,7 @@ export function resolveSubTabKey(mainTab: MainMediaTab, subTabId: string): SubTa
   if (mainTab === 'music') {
     if (subTabId === 'function_music' || subTabId === 'function-music') return 'function_music';
     if (subTabId === 'own_music' || subTabId === 'own-music') return 'own_music';
+    if (subTabId === 'meditation_music' || subTabId === 'meditation-music' || subTabId === 'meditation') return 'meditation_music';
   }
   return subTabId as SubTabKey;
 }
@@ -295,6 +296,13 @@ export async function fetchSubTabTracks(
           if (Array.isArray(fallbackItems) && fallbackItems.length > 0) items = fallbackItems;
         }
       }
+      if ((!Array.isArray(items) || items.length === 0) && subTab === 'meditation_music') {
+        const fallbackRes = await fetch(`${WORKER_BASE_URL}/?folder=${encodeURIComponent('meditation music')}`);
+        if (fallbackRes.ok) {
+          const fallbackItems = await fallbackRes.json();
+          if (Array.isArray(fallbackItems) && fallbackItems.length > 0) items = fallbackItems;
+        }
+      }
       if (Array.isArray(items)) {
         const tracks = mapR2ItemsToTracks(items, subTab);
         setJSON(storageKey, tracks);
@@ -323,7 +331,7 @@ export async function prefetchMainTabAudio(
   const subTabsByMain: Record<MainMediaTab, SubTabKey[]> = {
     songs: ['panch_swarup', 'hindi', 'malayalam', 'om_and_bhog', 'own_tunes'],
     commentary: ['sheeba_sister', 'sheeja_sister', 'others'],
-    music: ['function_music', 'own_music'],
+    music: ['function_music', 'own_music', 'meditation_music'],
     ringtones: ['ringtone_hindi', 'ringtone_malayalam'],
   };
 

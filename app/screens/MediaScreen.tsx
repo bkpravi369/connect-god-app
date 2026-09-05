@@ -81,6 +81,7 @@ export const MEDIA_TABS_CONFIG: Record<
     subTabs: [
       { id: "function_music", label: "Function Music" },
       { id: "own_music", label: "Own Music" },
+      { id: "meditation_music", label: "Meditation Music" },
     ],
   },
   ringtones: {
@@ -104,6 +105,7 @@ const ALL_SUBTAB_KEYS: SubTabKey[] = [
   "others",
   "function_music",
   "own_music",
+  "meditation_music",
   "ringtone_hindi",
   "ringtone_malayalam",
 ];
@@ -306,6 +308,29 @@ export default function MediaScreen() {
         if (!Array.isArray(data) || data.length === 0) {
           const resFallback = await fetch(
             `https://babacloudflare.bkpraveen2010.workers.dev/?folder=own-tune`
+          );
+          const dataFallback = await resFallback.json();
+          if (Array.isArray(dataFallback) && dataFallback.length > 0) {
+            data = dataFallback;
+          }
+        }
+        if (Array.isArray(data)) {
+          setTracks(data);
+        } else {
+          setTracks([]);
+        }
+        return;
+      }
+
+      // Dedicated dynamic fetching for Meditation Music (?folder=meditation-music with fallback to meditation music)
+      if (targetSubTab === "meditation_music") {
+        let res = await fetch(
+          `https://babacloudflare.bkpraveen2010.workers.dev/?folder=meditation-music`
+        );
+        let data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          const resFallback = await fetch(
+            `https://babacloudflare.bkpraveen2010.workers.dev/?folder=${encodeURIComponent("meditation music")}`
           );
           const dataFallback = await resFallback.json();
           if (Array.isArray(dataFallback) && dataFallback.length > 0) {

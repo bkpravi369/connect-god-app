@@ -37,6 +37,7 @@ import {
   SubTabKey,
   CloudflareR2Item,
   R2_FOLDER_MAPPING,
+  CLOUDINARY_OWN_TUNE_TRACKS,
 } from "@/services/audioService";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { SoundwaveIndicator } from "@/components/SoundwaveIndicator";
@@ -63,6 +64,7 @@ export const MEDIA_TABS_CONFIG: Record<
       { id: "hindi", label: "Hindi" },
       { id: "malayalam", label: "Malayalam" },
       { id: "om_and_bhog", label: "Om & Bhog" },
+      { id: "own_tunes", label: "Own Tune" },
     ],
   },
   commentary: {
@@ -96,6 +98,7 @@ const ALL_SUBTAB_KEYS: SubTabKey[] = [
   "hindi",
   "malayalam",
   "om_and_bhog",
+  "own_tunes",
   "sheeba_sister",
   "sheeja_sister",
   "others",
@@ -265,10 +268,29 @@ export default function MediaScreen() {
     return () => pulseLoop.stop();
   }, [skeletonPulse]);
 
-  // 1. Direct Cloudflare R2 Folder Fetch Function
-  async function fetchTracks(folderPath: string) {
+  // 1. Direct Cloudflare R2 Folder Fetch Function with Cloudinary Own Tune support
+  async function fetchTracks(folderPath: string, targetSubTab: SubTabKey = subTab) {
     try {
       setLoading(true);
+
+      // Connect "Own Tune" to the Cloudinary folder containing the 6 audio tracks
+      if (targetSubTab === "own_tunes") {
+        try {
+          const res = await fetch(
+            `https://babacloudflare.bkpraveen2010.workers.dev/?folder=${encodeURIComponent(folderPath)}`
+          );
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            setTracks(data);
+            return;
+          }
+        } catch {
+          // fallback to Cloudinary tracks
+        }
+        setTracks(CLOUDINARY_OWN_TUNE_TRACKS);
+        return;
+      }
+
       const res = await fetch(
         `https://babacloudflare.bkpraveen2010.workers.dev/?folder=${encodeURIComponent(folderPath)}`
       );
@@ -282,7 +304,11 @@ export default function MediaScreen() {
       }
     } catch (error) {
       console.error("Error fetching audio files:", error);
-      setTracks([]);
+      if (targetSubTab === "own_tunes") {
+        setTracks(CLOUDINARY_OWN_TUNE_TRACKS);
+      } else {
+        setTracks([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -292,7 +318,7 @@ export default function MediaScreen() {
   useEffect(() => {
     const currentFolderPath = R2_FOLDER_MAPPING[subTab];
     if (currentFolderPath) {
-      fetchTracks(currentFolderPath);
+      fetchTracks(currentFolderPath, subTab);
     }
   }, [subTab, mainTab]);
 
@@ -312,7 +338,7 @@ export default function MediaScreen() {
     try {
       const currentFolderPath = R2_FOLDER_MAPPING[subTab];
       if (currentFolderPath) {
-        await fetchTracks(currentFolderPath);
+        await fetchTracks(currentFolderPath, subTab);
       }
       toast.show("Audio playlist refreshed", "success");
     } catch {
@@ -331,7 +357,7 @@ export default function MediaScreen() {
     setSearchQuery("");
     const currentFolderPath = R2_FOLDER_MAPPING[firstSub];
     if (currentFolderPath) {
-      fetchTracks(currentFolderPath);
+      fetchTracks(currentFolderPath, firstSub);
     }
   };
 
@@ -341,7 +367,7 @@ export default function MediaScreen() {
     setSearchQuery("");
     const currentFolderPath = R2_FOLDER_MAPPING[newSubTab];
     if (currentFolderPath) {
-      fetchTracks(currentFolderPath);
+      fetchTracks(currentFolderPath, newSubTab);
     }
   };
 

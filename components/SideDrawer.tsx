@@ -67,16 +67,17 @@ export const PROFILES: ProfileData[] = [
   },
   {
     name: 'BK Sheeja',
-    subtitle: 'Spiritual Teacher & Counsellor',
-    designation: 'Spiritual Teacher & Counsellor',
+    subtitle: 'Assistant Director, BK Calicut',
+    designation: 'Assistant Director, BK Calicut',
     cvUrl: '/profiles/bk-sheeja-cv.pdf',
     phone: '09895777017',
     email: 'bksheeja71@gmail.com',
     bio: 'Dedicated spiritual teacher, counsellor, and Rajyoga practitioner for over 34 years. Expert in emotional wellness, stress-free lifestyle, and mind meditation.',
     highlights: [
+      'Assistant Director, BK Calicut',
       '34 Years of Rajyoga Meditation Practitioner Experience',
       'M.Sc in Value Education & Spirituality',
-      'Renowned Speaker & Stress Management Counsellor',
+      'Accomplished Motivational Speaker & Counsellor',
     ],
   },
 ];

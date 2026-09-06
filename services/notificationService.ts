@@ -6,6 +6,7 @@ import {
 } from '@/lib/constants';
 import { getJSON } from '@/lib/storage';
 import { playTrafficSlot, timeToTrafficSlotKey, stopTrafficAudio } from './trafficAudioService';
+import { syncNativeTrafficAlarms } from './trafficNativePlugin';
 
 // Safely import Capacitor LocalNotifications
 let LocalNotifications: any = null;
@@ -172,6 +173,11 @@ export async function initNotificationService(): Promise<void> {
 export async function rescheduleAllTrafficAlarms(): Promise<void> {
   const hourlyEnabled = getJSON<boolean>(STORAGE_KEYS.hourlyChimes, true);
   const customAlarms = getJSON<any[]>(STORAGE_KEYS.alarms, []);
+
+  // ── 0. Native Android Hardware AlarmManager Sync (Deep Sleep / Dead App) ──
+  await syncNativeTrafficAlarms(true, hourlyEnabled, customAlarms).catch((err) => {
+    console.warn('[NotificationService] Failed to sync native hardware alarms:', err);
+  });
 
   // ── 1. Native Capacitor Scheduling ────────────────────────────────────
   if (LocalNotifications) {

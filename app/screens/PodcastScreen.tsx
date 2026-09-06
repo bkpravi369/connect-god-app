@@ -14,7 +14,13 @@ import { Play, Headphones, Radio, ExternalLink, Sparkles, Youtube, RotateCw } fr
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import { useToast } from '@/components/ToastProvider';
 
-import { getApiKey, syncAllYouTubeMedia, YouTubeVideo } from '@/lib/youtube';
+import {
+  getApiKey,
+  syncAllYouTubeMedia,
+  YouTubeVideo,
+  fetchBKSheejaVideoList,
+  DEFAULT_BK_SHEEJA_VIDEOS,
+} from '@/lib/youtube';
 import { fetchPodcastVideos, getCachedPodcastVideos } from '@/services/podcastService';
 
 export type PodcastCardItem = {
@@ -84,10 +90,26 @@ const DEFAULT_MEDIA_FEEDS: {
   },
 };
 
+function formatVideoDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
+    return date.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
 export default function PodcastScreen() {
   const toast = useToast();
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'live' | 'podcast' | 'sheeba' | 'sheeja'>('all');
   const [feeds, setFeeds] = useState(DEFAULT_MEDIA_FEEDS);
+  const [sheejaVideos, setSheejaVideos] = useState<YouTubeVideo[]>(DEFAULT_BK_SHEEJA_VIDEOS);
   const [allVideosList, setAllVideosList] = useState<PodcastCardItem[]>([
     DEFAULT_MEDIA_FEEDS.live,
     DEFAULT_MEDIA_FEEDS.podcast,
@@ -132,7 +154,7 @@ export default function PodcastScreen() {
         setAllVideosList([liveItem, podItem, sheebaItem, sheejaItem]);
       }
 
-      // 2. Also try direct client YouTube sync if available
+      // 2. Direct client YouTube sync for all channels
       const mediaResult = await syncAllYouTubeMedia(bypassCache);
       if (mediaResult) {
         const liveCard = mapYtToCard(mediaResult.liveVideo, DEFAULT_MEDIA_FEEDS.live);
@@ -150,12 +172,31 @@ export default function PodcastScreen() {
         setFeeds(updatedFeeds);
         setAllVideosList([liveCard, podcastCard, sheebaCard, sheejaCard]);
       }
+
+      // 3. Dedicated BK Sheeja video list fetch (RSS fallback, cache-busting, silent fallback)
+      const sheejaList = await fetchBKSheejaVideoList(bypassCache);
+      if (sheejaList && sheejaList.length > 0) {
+        setSheejaVideos(sheejaList);
+        const latestSheeja = sheejaList[0];
+        setFeeds((prev) => ({
+          ...prev,
+          sheeja: mapYtToCard(latestSheeja, prev.sheeja || DEFAULT_MEDIA_FEEDS.sheeja),
+        }));
+      }
     } catch (err) {
       console.warn('[PodcastScreen] Error loading YouTube media engine:', err);
     }
   };
 
   useEffect(() => {
+    // 1. Silent Local Storage Immediate Load: Never blank
+    fetchBKSheejaVideoList(false).then((cached) => {
+      if (cached && cached.length > 0) {
+        setSheejaVideos(cached);
+      }
+    });
+
+    // 2. Fresh background fetch with cache-busting
     loadYouTubeMediaEngine(true);
   }, []);
 
@@ -166,8 +207,11 @@ export default function PodcastScreen() {
     toast.show('YouTube feeds synced ✨', 'success');
   };
 
-  const handleOpenVideo = async (video: PodcastCardItem) => {
-    const targetUrl = video.link || video.url || `https://www.youtube.com/watch?v=${video.videoId}`;
+  const handleOpenVideo = async (video: PodcastCardItem | YouTubeVideo) => {
+    const targetUrl =
+      (video as any).link ||
+      video.url ||
+      `https://www.youtube.com/watch?v=${(video as any).videoId || (video as any).id}`;
     try {
       const canOpen = await Linking.canOpenURL(targetUrl).catch(() => false);
       if (canOpen) {
@@ -336,13 +380,85 @@ export default function PodcastScreen() {
           )}
 
         {/* 4. BK Sheeja Meditation */}
-        {(selectedFilter === 'all' || selectedFilter === 'sheeja') &&
-          renderSectionCard(
-            'Meditation & Commentary',
-            'BK Sheeja',
-            feeds.sheeja,
-            '#7c3aed'
-          )}
+        {(selectedFilter === 'all' || selectedFilter === 'sheeja') && (
+          <View>
+            {renderSectionCard(
+              'Meditation & Commentary',
+              'BK Sheeja',
+              feeds.sheeja,
+              '#7c3aed'
+            )}
+
+            {/* Official Channel Link Pill */}
+            <Pressable
+              style={({ pressed }) => [styles.viewAllChannelBtn, styles.sheejaChannelBtn, pressed && { opacity: 0.85 }]}
+              onPress={() => Linking.openURL('https://youtube.com/@BKSheeja')}
+              accessibilityLabel="Visit BK Sheeja on YouTube"
+            >
+              <Youtube color="#7c3aed" size={18} strokeWidth={2.2} />
+              <Text style={styles.sheejaChannelText}>Visit @BKSheeja on YouTube</Text>
+              <ExternalLink color="#7c3aed" size={14} strokeWidth={2.2} />
+            </Pressable>
+
+            {/* If BK Sheeja filter is active, display the full list of latest 10-15 videos! */}
+            {selectedFilter === 'sheeja' && (
+              <View style={styles.videoListSection}>
+                <View style={styles.videoListHeaderRow}>
+                  <Text style={styles.videoListHeading}>LATEST UPLOADS & SESSIONS</Text>
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeText}>{sheejaVideos.length} Videos</Text>
+                  </View>
+                </View>
+
+                {/* Subtle Pull to refresh hint */}
+                <View style={styles.refreshHintRow}>
+                  <RotateCw color={COLORS.neutral[400]} size={12} strokeWidth={2.2} />
+                  <Text style={styles.refreshHintText}>Pull down to check for new videos</Text>
+                </View>
+
+                {/* Render the video list */}
+                <View style={styles.videoGrid}>
+                  {sheejaVideos.map((video, idx) => (
+                    <Pressable
+                      key={`sheeja-vid-${video.videoId}-${idx}`}
+                      style={({ pressed }) => [styles.videoItemRow, pressed && styles.cardPressed]}
+                      onPress={() => handleOpenVideo(video)}
+                      accessibilityLabel={video.title}
+                    >
+                      <View style={styles.videoItemThumbWrap}>
+                        <Image
+                          source={{ uri: video.thumbnail }}
+                          style={styles.videoItemThumbImg}
+                          resizeMode="cover"
+                        />
+                        <View style={styles.videoItemPlayOverlay}>
+                          <View style={styles.miniPlayCircle}>
+                            <Play color="#ffffff" size={13} fill="#ffffff" />
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.videoItemInfo}>
+                        <Text style={styles.videoItemTitle} numberOfLines={2}>
+                          {video.title}
+                        </Text>
+                        <View style={styles.videoItemMetaRow}>
+                          <Text style={styles.videoItemChannel}>BK Sheeja</Text>
+                          {video.publishedAt && (
+                            <>
+                              <Text style={styles.videoItemDot}>•</Text>
+                              <Text style={styles.videoItemDate}>{formatVideoDate(video.publishedAt)}</Text>
+                            </>
+                          )}
+                        </View>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        )}
 
         <View style={{ height: SPACING['3xl'] }} />
       </ScrollView>
@@ -570,6 +686,129 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#92400e',
     letterSpacing: 0.2,
+  },
+  sheejaChannelBtn: {
+    backgroundColor: '#f5f3ff',
+    borderColor: '#ddd6fe',
+  },
+  sheejaChannelText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 13,
+    color: '#6d28d9',
+    letterSpacing: 0.2,
+  },
+  videoListSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+    ...SHADOWS.sm,
+  },
+  videoListHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  videoListHeading: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 13,
+    color: COLORS.neutral[700],
+    letterSpacing: 0.6,
+  },
+  countBadge: {
+    backgroundColor: '#f3e8ff',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+  },
+  countBadgeText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 11,
+    color: '#7c3aed',
+  },
+  refreshHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: SPACING.md,
+  },
+  refreshHintText: {
+    fontFamily: FONTS.sans,
+    fontSize: 11.5,
+    color: COLORS.neutral[400],
+  },
+  videoGrid: {
+    gap: SPACING.sm,
+  },
+  videoItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.neutral[50],
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+    padding: 8,
+    gap: SPACING.sm,
+  },
+  videoItemThumbWrap: {
+    width: 104,
+    height: 66,
+    borderRadius: RADIUS.sm,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: COLORS.neutral[900],
+  },
+  videoItemThumbImg: {
+    width: '100%',
+    height: '100%',
+  },
+  videoItemPlayOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniPlayCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#7c3aed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 2,
+  },
+  videoItemInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  videoItemTitle: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 12.5,
+    lineHeight: 17,
+    color: COLORS.neutral[900],
+    marginBottom: 4,
+  },
+  videoItemMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  videoItemChannel: {
+    fontFamily: FONTS.sansMedium,
+    fontSize: 11,
+    color: COLORS.neutral[600],
+  },
+  videoItemDot: {
+    fontSize: 10,
+    color: COLORS.neutral[400],
+  },
+  videoItemDate: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: COLORS.neutral[400],
   },
 });
 

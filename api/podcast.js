@@ -68,8 +68,11 @@ export default async function handler(req, res) {
 
       try {
         if (apiKey) {
-          const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${ch.id}&order=date&type=video&maxResults=5&key=${apiKey}`;
-          const r = await fetch(searchUrl, { signal: AbortSignal.timeout(4000) });
+          const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${ch.id}&order=date&type=video&maxResults=5&key=${apiKey}&_t=${Date.now()}`;
+          const r = await fetch(searchUrl, {
+            headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' },
+            signal: AbortSignal.timeout(4000),
+          });
           if (r.ok) {
             const data = await r.json();
             if (data?.items?.length > 0) {
@@ -96,7 +99,43 @@ export default async function handler(req, res) {
           }
         }
       } catch (e) {
-        // Fallback to static data
+        // Fallback to RSS
+      }
+
+      // 2. RSS Feed Fallback via rss2json
+      try {
+        const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${ch.id}`;
+        const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}&_t=${Date.now()}`;
+        const rRes = await fetch(rssEndpoint, {
+          headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', Pragma: 'no-cache' },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (rRes.ok) {
+          const rData = await rRes.json();
+          if (rData?.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
+            const first = rData.items[0];
+            const vid = (first.guid || first.link || '').replace(/^yt:video:/, '').split('v=').pop();
+            if (vid) {
+              return {
+                id: vid,
+                videoId: vid,
+                title: first.title || fb.title,
+                channelName: first.author || ch.name,
+                channelId: ch.id,
+                thumbnail: first.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                url: first.link || `https://www.youtube.com/watch?v=${vid}`,
+                link: first.link || `https://www.youtube.com/watch?v=${vid}`,
+                publishedAt: first.pubDate || new Date().toISOString(),
+                badge: ch.badge,
+                badgeColor: ch.badgeColor,
+                category: ch.category,
+                description: first.description || fb.description,
+              };
+            }
+          }
+        }
+      } catch (rssErr) {
+        // Continue to fallback
       }
 
       return fb;

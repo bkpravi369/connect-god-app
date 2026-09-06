@@ -203,6 +203,355 @@ export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<Y
   return fallbackPodcast;
 }
 
+export const DEFAULT_BK_SHEEJA_VIDEOS: YouTubeVideo[] = [
+  {
+    videoId: 'tiKb43faieY',
+    title: 'Edikkot Ayyappa Temple | Sheeja sister',
+    subtitle: 'BK Sheeja',
+    description: 'Special spiritual visit and divine discourse by BK Sheeja Sister.',
+    thumbnail: 'https://i1.ytimg.com/vi/tiKb43faieY/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=tiKb43faieY',
+    publishedAt: '2026-07-22T11:00:15Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'W2t_inYBNR0',
+    title: 'Do you wish success. ? Then this Video is for You ...',
+    subtitle: 'BK Sheeja',
+    description: 'Powerful guidance on true spiritual success and peace of mind.',
+    thumbnail: 'https://i4.ytimg.com/vi/W2t_inYBNR0/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=W2t_inYBNR0',
+    publishedAt: '2026-03-28T00:15:00Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'Oy0zW1TT77w',
+    title: 'ഈ പുതുവർഷത്തിൽ നിങ്ങൾക്കുള്ള സമ്മാനം "ശാന്തിയുടെ യന്ത്രം" | HAPPY NEW YEAR | BK Sheeja Sister',
+    subtitle: 'BK Sheeja',
+    description: 'Divine gift for the New Year - The Instrument of Peace by BK Sheeja Sister.',
+    thumbnail: 'https://i4.ytimg.com/vi/Oy0zW1TT77w/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=Oy0zW1TT77w',
+    publishedAt: '2026-01-01T00:30:23Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'kkewcZjv8J8',
+    title: 'Onam the Festival of Togetherness by BK Sheeja Sister',
+    subtitle: 'BK Sheeja',
+    description: 'Spiritual significance of Onam festival explained by BK Sheeja Sister.',
+    thumbnail: 'https://i4.ytimg.com/vi/kkewcZjv8J8/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=kkewcZjv8J8',
+    publishedAt: '2025-09-05T03:36:28Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'mmUYzmRLDls',
+    title: 'BRAHMAKUMARIS SNEHA MILANAM | VIVEKANANDA SAMSKARIKA VEDI | BK SHEEJA SISTER',
+    subtitle: 'BK Sheeja',
+    description: 'Sneha Milanam spiritual gathering discourse by BK Sheeja Sister.',
+    thumbnail: 'https://i2.ytimg.com/vi/mmUYzmRLDls/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=mmUYzmRLDls',
+    publishedAt: '2024-12-16T08:47:53Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'pstUaMueka4',
+    title: 'Happy Diwali 2024',
+    subtitle: 'BK Sheeja',
+    description: 'Happy Diwali message of inner spiritual light and soul awakening.',
+    thumbnail: 'https://i1.ytimg.com/vi/pstUaMueka4/hqdefault.jpg',
+    url: 'https://www.youtube.com/shorts/pstUaMueka4',
+    publishedAt: '2024-11-01T07:24:30Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'xQeDM8QOrN0',
+    title: 'നെഗറ്റീവ് മാനിഫെസ്റ്റേഷൻ ഇല്ലാതാക്കാൻ ഈ 2 കാര്യങ്ങൾ ചെയ്യുക - Morning Wisdom - by BK Sheeja Sister',
+    subtitle: 'BK Sheeja',
+    description: 'How to overcome negative thoughts and manifest positive energy through Rajayoga.',
+    thumbnail: 'https://i1.ytimg.com/vi/xQeDM8QOrN0/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=xQeDM8QOrN0',
+    publishedAt: '2024-04-11T23:30:16Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'OanYmYraUZ8',
+    title: 'ഈ 10 കാര്യങ്ങൾ, ഒരാളും ഒരിക്കലും ചെയ്യാൻ പാടില്ല - Morning Wisdom - by BK Sheeja Sister',
+    subtitle: 'BK Sheeja',
+    description: '10 crucial spiritual precautions every seeker should maintain for peace.',
+    thumbnail: 'https://i4.ytimg.com/vi/OanYmYraUZ8/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=OanYmYraUZ8',
+    publishedAt: '2024-04-09T23:30:05Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'YEFig2aZR-s',
+    title: 'Meditation for getting Job - by BK Sheeja Sister',
+    subtitle: 'BK Sheeja',
+    description: 'Guided Rajayoga meditation for confidence, focus, and career success.',
+    thumbnail: 'https://i2.ytimg.com/vi/YEFig2aZR-s/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=YEFig2aZR-s',
+    publishedAt: '2024-04-06T23:30:05Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+  {
+    videoId: 'tmLwjyi-Vdk',
+    title: 'ചിന്തിച്ചു കർമ്മം ചെയ്യുക - Morning Wisdom - by BK Sheeja Sister',
+    subtitle: 'BK Sheeja',
+    description: 'Elevate your karma through thoughtful awareness and divine remembrance.',
+    thumbnail: 'https://i1.ytimg.com/vi/tmLwjyi-Vdk/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=tmLwjyi-Vdk',
+    publishedAt: '2024-04-04T23:30:16Z',
+    badge: 'MEDITATION',
+    badgeColor: '#7c3aed',
+    channelTitle: 'BK Sheeja',
+  },
+];
+
+/**
+ * Robust XML parser extracting 10-15 video entries from YouTube Channel RSS Feed
+ */
+export function parseYouTubeRss(
+  xmlText: string,
+  badge = 'CLASS',
+  badgeColor = '#0284c7'
+): YouTubeVideo[] {
+  const entries: YouTubeVideo[] = [];
+  const entryRegex = /<entry[\s\S]*?<\/entry>/gi;
+  let match;
+  while ((match = entryRegex.exec(xmlText)) !== null) {
+    const entryXml = match[0];
+    const videoIdMatch =
+      entryXml.match(/<yt:videoId>([\s\S]*?)<\/yt:videoId>/i) ||
+      entryXml.match(/<id>yt:video:([\s\S]*?)<\/id>/i);
+    const titleMatch = entryXml.match(/<title[\s\S]*?>([\s\S]*?)<\/title>/i);
+    const pubMatch = entryXml.match(/<published>([\s\S]*?)<\/published>/i);
+    const thumbMatch = entryXml.match(/<media:thumbnail[^>]+url=[\"']([^\"']+)[\"']/i);
+    const descMatch = entryXml.match(/<media:description[\s\S]*?>([\s\S]*?)<\/media:description>/i);
+    const authorMatch = entryXml.match(/<name>([\s\S]*?)<\/name>/i);
+
+    const videoId = videoIdMatch ? videoIdMatch[1].trim() : '';
+    if (!videoId) continue;
+
+    const rawTitle = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim() : '';
+    const cleanTitle = rawTitle
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+    const publishedAt = pubMatch ? pubMatch[1].trim() : new Date().toISOString();
+    const thumbnail = thumbMatch ? thumbMatch[1].trim() : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    const description = descMatch ? descMatch[1].trim() : '';
+    const channelTitle = authorMatch ? authorMatch[1].trim() : 'Brahma Kumaris';
+
+    entries.push({
+      videoId,
+      title: cleanTitle || 'Spiritual Video',
+      subtitle: channelTitle,
+      description,
+      thumbnail,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      publishedAt,
+      badge,
+      badgeColor,
+      channelTitle,
+    });
+  }
+  return entries;
+}
+
+/**
+ * Robust Multi-Tiered Channel Video List Fetcher
+ * Features:
+ *  1. Cache-busting parameter &_t=${Date.now()}
+ *  2. Headers: Cache-Control: no-cache, no-store, must-revalidate
+ *  3. YouTube Data API v3 with graceful 403/429 Quota Exceeded handling
+ *  4. Instant fallback to YouTube Channel RSS Feed via rss2json converter
+ *  5. Direct XML RSS parser fallback
+ *  6. Silent Local Storage fallback so the section is NEVER blank
+ */
+export async function fetchChannelVideoList(
+  channelId: string,
+  badge = 'CLASS',
+  badgeColor = '#0284c7',
+  bypassCache = false
+): Promise<YouTubeVideo[]> {
+  const cacheKey = `yt_videos_list_${channelId}`;
+
+  // 1. Silent Local Storage Check
+  if (!bypassCache) {
+    const cached = getFromCache<YouTubeVideo[]>(cacheKey);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      return cached;
+    }
+  }
+
+  const now = Date.now();
+  const cacheBustParam = `&_t=${now}`;
+  const noCacheHeaders = {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  };
+
+  const apiKey = getApiKey();
+
+  // 2. Try YouTube Data API v3 (Handle 403 / 429 quota gracefully)
+  if (apiKey) {
+    try {
+      const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=15&key=${apiKey}${cacheBustParam}`;
+      const res = await fetch(searchUrl, {
+        headers: noCacheHeaders,
+        signal: AbortSignal.timeout(4000),
+      }).catch(() => null);
+
+      if (res && res.ok) {
+        const sData = await res.json();
+        if (sData && Array.isArray(sData.items) && sData.items.length > 0) {
+          const videos: YouTubeVideo[] = sData.items
+            .map((item: any) => {
+              const vid = item.id?.videoId || (typeof item.id === 'string' ? item.id : '');
+              if (!vid) return null;
+              return {
+                videoId: vid,
+                title: item.snippet?.title || 'Spiritual Video',
+                subtitle: item.snippet?.channelTitle || 'Brahma Kumaris',
+                description: item.snippet?.description || '',
+                thumbnail:
+                  item.snippet?.thumbnails?.high?.url ||
+                  item.snippet?.thumbnails?.medium?.url ||
+                  `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                url: `https://www.youtube.com/watch?v=${vid}`,
+                publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
+                badge,
+                badgeColor,
+                channelTitle: item.snippet?.channelTitle,
+              };
+            })
+            .filter(Boolean) as YouTubeVideo[];
+
+          if (videos.length > 0) {
+            saveToCache(cacheKey, videos);
+            saveToCache(`yt_channel_v3_${channelId}`, videos[0]);
+            console.log(`[YouTube Engine] Successfully fetched ${videos.length} videos via API v3 for ${channelId}`);
+            return videos;
+          }
+        }
+      } else if (res && (res.status === 403 || res.status === 429)) {
+        console.warn(`[YouTube Engine] YouTube API quota exceeded (status ${res.status}) for ${channelId}. Instantly falling back to RSS feed.`);
+      }
+    } catch (err) {
+      console.warn(`[YouTube Engine] YouTube API error for ${channelId}:`, err);
+    }
+  }
+
+  // 3. Fallback: YouTube Channel RSS Feed via rss2json converter with cache-busting
+  try {
+    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+    const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}${cacheBustParam}`;
+    const rRes = await fetch(rssEndpoint, {
+      headers: noCacheHeaders,
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => null);
+
+    if (rRes && rRes.ok) {
+      const rData = await rRes.json();
+      if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
+        const videos: YouTubeVideo[] = rData.items
+          .map((item: any) => {
+            const vid = (item.guid || item.link || '').replace(/^yt:video:/, '').split('v=').pop() || '';
+            if (!vid) return null;
+            return {
+              videoId: vid,
+              title: item.title || 'Spiritual Video',
+              subtitle: item.author || 'Brahma Kumaris',
+              description: item.description || '',
+              thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+              url: item.link || `https://www.youtube.com/watch?v=${vid}`,
+              publishedAt: item.pubDate || new Date().toISOString(),
+              badge,
+              badgeColor,
+              channelTitle: item.author || 'Brahma Kumaris',
+            };
+          })
+          .filter(Boolean) as YouTubeVideo[];
+
+        if (videos.length > 0) {
+          saveToCache(cacheKey, videos);
+          saveToCache(`yt_channel_v3_${channelId}`, videos[0]);
+          console.log(`[YouTube Engine] Successfully fetched ${videos.length} videos via RSS converter for ${channelId}`);
+          return videos;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[YouTube Engine] RSS converter error for ${channelId}:`, err);
+  }
+
+  // 4. Fallback: Direct YouTube RSS XML fetch & parser (Native iOS / Android without CORS)
+  try {
+    const directRssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}${cacheBustParam}`;
+    const directRes = await fetch(directRssUrl, {
+      headers: noCacheHeaders,
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => null);
+
+    if (directRes && directRes.ok) {
+      const xmlText = await directRes.text();
+      const parsedVideos = parseYouTubeRss(xmlText, badge, badgeColor);
+      if (parsedVideos.length > 0) {
+        saveToCache(cacheKey, parsedVideos);
+        saveToCache(`yt_channel_v3_${channelId}`, parsedVideos[0]);
+        console.log(`[YouTube Engine] Successfully extracted ${parsedVideos.length} videos via direct XML for ${channelId}`);
+        return parsedVideos;
+      }
+    }
+  } catch (err) {
+    console.warn(`[YouTube Engine] Direct XML RSS error for ${channelId}:`, err);
+  }
+
+  // 5. Silent Local Storage Fallback: Return any cached videos
+  const cachedStale = getFromCache<YouTubeVideo[]>(cacheKey);
+  if (cachedStale && Array.isArray(cachedStale) && cachedStale.length > 0) {
+    console.log(`[YouTube Engine] Serving ${cachedStale.length} videos from local storage for ${channelId}`);
+    return cachedStale;
+  }
+
+  // 6. Curated Fallback (for BK Sheeja)
+  if (channelId === 'UCvQFuOM38iAZD7ltMujOq-g') {
+    console.log('[YouTube Engine] Serving curated fallback videos for BK Sheeja');
+    return DEFAULT_BK_SHEEJA_VIDEOS;
+  }
+
+  return [];
+}
+
+/**
+ * Dedicated BK Sheeja Video List Fetcher
+ */
+export async function fetchBKSheejaVideoList(bypassCache = false): Promise<YouTubeVideo[]> {
+  return fetchChannelVideoList('UCvQFuOM38iAZD7ltMujOq-g', 'MEDITATION', '#7c3aed', bypassCache);
+}
+
 /**
  * Direct channel fetch via YouTube Data API v3 search endpoint + RSS bridge
  */
@@ -217,81 +566,12 @@ export async function fetchChannelLatestVideo(
     return fetchDedicatedPodcastVideo(bypassCache);
   }
 
-  const apiKey = getApiKey();
-  const cacheKey = `yt_channel_v3_${channelId}`;
-  if (!bypassCache) {
-    const cached = getFromCache<YouTubeVideo>(cacheKey);
-    if (cached) return cached;
+  const list = await fetchChannelVideoList(channelId, badge, badgeColor, bypassCache);
+  if (list && list.length > 0) {
+    return list[0];
   }
 
-  if (apiKey) {
-    try {
-      const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=5&key=${apiKey}`;
-      const sRes = await fetch(searchUrl, { cache: 'no-store' }).catch(() => null);
-      if (sRes && sRes.ok) {
-        const sData = await sRes.json();
-        if (sData && Array.isArray(sData.items) && sData.items.length > 0) {
-          const first = sData.items[0];
-          const vid = first.id?.videoId || (typeof first.id === 'string' ? first.id : '');
-          if (vid) {
-            const video: YouTubeVideo = {
-              videoId: vid,
-              title: first.snippet?.title || 'Spiritual Video',
-              subtitle: first.snippet?.channelTitle || 'Brahma Kumaris',
-              description: first.snippet?.description || '',
-              thumbnail:
-                first.snippet?.thumbnails?.high?.url ||
-                first.snippet?.thumbnails?.medium?.url ||
-                `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-              url: `https://www.youtube.com/watch?v=${vid}`,
-              publishedAt: first.snippet?.publishedAt || new Date().toISOString(),
-              badge,
-              badgeColor,
-              channelTitle: first.snippet?.channelTitle,
-            };
-            saveToCache(cacheKey, video);
-            return video;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn(`[YouTube Engine] Error fetching channel ${channelId}:`, err);
-    }
-  }
-
-  // Fallback to RSS bridge
-  try {
-    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
-    const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-    const rRes = await fetch(rssEndpoint, { cache: 'no-store' }).catch(() => null);
-    if (rRes && rRes.ok) {
-      const rData = await rRes.json();
-      if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
-        const first = rData.items[0];
-        const vid = (first.guid || first.link || '').replace(/^yt:video:/, '').split('v=').pop() || '';
-        if (vid) {
-          const video: YouTubeVideo = {
-            videoId: vid,
-            title: first.title || 'Spiritual Video',
-            subtitle: first.author || 'Brahma Kumaris',
-            description: first.description || '',
-            thumbnail: first.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-            url: first.link || `https://www.youtube.com/watch?v=${vid}`,
-            publishedAt: first.pubDate || new Date().toISOString(),
-            badge,
-            badgeColor,
-            channelTitle: first.author,
-          };
-          saveToCache(cacheKey, video);
-          return video;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn(`[YouTube Engine] RSS fallback error for ${channelId}:`, err);
-  }
-
-  return getFromCache<YouTubeVideo>(cacheKey) || null;
+  return getFromCache<YouTubeVideo>(`yt_channel_v3_${channelId}`) || null;
 }
 
 /**

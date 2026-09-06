@@ -1,6 +1,9 @@
 import {
   YouTubeVideo,
   fetchChannelLatestVideo,
+  fetchChannelVideoList,
+  fetchBKSheejaVideoList,
+  DEFAULT_BK_SHEEJA_VIDEOS,
   fetchDedicatedPodcastVideo,
   syncAllYouTubeMedia,
   clearYouTubeCache,
@@ -10,6 +13,9 @@ import {
 export {
   YouTubeVideo,
   fetchChannelLatestVideo,
+  fetchChannelVideoList,
+  fetchBKSheejaVideoList,
+  DEFAULT_BK_SHEEJA_VIDEOS,
   fetchDedicatedPodcastVideo,
   syncAllYouTubeMedia,
   clearYouTubeCache,

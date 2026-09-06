@@ -21,8 +21,9 @@ import {
   Instagram,
   ChevronRight,
   ChevronDown,
-  Shield,
+  Share2,
   ShieldCheck,
+  Smartphone,
   BookOpen,
   Music,
   MessageCircle,
@@ -118,7 +119,6 @@ const DRAWER_CHANNELS: DrawerChannel[] = CHANNELS.map((c) => ({
 type Props = {
   visible: boolean;
   onClose: () => void;
-  onAdminPress: () => void;
   onMurliPress: () => void;
   onMeditationPress: () => void;
   onWallpapersPress?: () => void;
@@ -157,7 +157,7 @@ function DrawerLogo() {
   return <BKSunEmblem size={44} />;
 }
 
-export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMeditationPress, onWallpapersPress, onAboutPress, onSelectChannel, socialLinks }: Props) {
+export function SideDrawer({ visible, onClose, onMurliPress, onMeditationPress, onWallpapersPress, onAboutPress, onSelectChannel, socialLinks }: Props) {
   const router = useRouter();
   const offscreen = -(DRAWER_W + 60);
   const translateX = React.useRef(new Animated.Value(offscreen)).current;
@@ -430,20 +430,8 @@ export function SideDrawer({ visible, onClose, onAdminPress, onMurliPress, onMed
             </View>
           </View>
 
-          {/* ── Admin Panel ─────────────────────────────────────────── */}
-          <Pressable
-            style={({ pressed }) => [styles.adminLinkRow, pressed && styles.rowPressed]}
-            onPress={() => { onClose(); onAdminPress(); }}
-          >
-            <View style={styles.adminLinkIconWrap}>
-              <Shield color={COLORS.secondary[600]} size={20} strokeWidth={2} />
-            </View>
-            <Text style={styles.adminLinkText}>Admin Panel</Text>
-            <ChevronRight color={COLORS.secondary[400]} size={18} strokeWidth={2} />
-          </Pressable>
-
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Version 1.0.0</Text>
+            <Text style={styles.footerText}>Version 1.0.5</Text>
             <Text style={styles.footerSub}>Made with devotion · Om Shanti</Text>
           </View>
         </ScrollView>
@@ -725,33 +713,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.sansMedium,
     fontSize: 15,
     color: COLORS.neutral[800],
-  },
-  // Admin link
-  adminLinkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.md,
-    borderRadius: RADIUS.md,
-    marginBottom: SPACING.xs,
-    backgroundColor: COLORS.secondary[50],
-    borderWidth: 1,
-    borderColor: COLORS.secondary[200],
-  },
-  adminLinkIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.secondary[100],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  adminLinkText: {
-    flex: 1,
-    fontFamily: FONTS.sansSemiBold,
-    fontSize: 15,
-    color: COLORS.secondary[700],
   },
   // Footer
   footer: {

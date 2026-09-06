@@ -36,7 +36,7 @@ export default function MeditationScreen() {
 
   const handlePlay = (item: MeditationItem) => {
     if (item.driveUrl.includes('example') || !item.driveUrl.trim()) {
-      toast.show('Audio URL not configured. Admin can set it in the Admin Panel.', 'info');
+      toast.show('Audio track currently unavailable', 'info');
       return;
     }
     if (playingItem?.id === item.id) {
@@ -114,7 +114,7 @@ export default function MeditationScreen() {
             <View style={styles.emptyState}>
               <Music color={COLORS.neutral[300]} size={36} strokeWidth={1.8} />
               <Text style={styles.emptyText}>No items yet</Text>
-              <Text style={styles.emptySub}>Admin can add tracks in the Admin Panel</Text>
+              <Text style={styles.emptySub}>New tracks will appear here</Text>
             </View>
           ) : (
             visible.map((item, idx) => {

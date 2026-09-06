@@ -787,7 +787,7 @@ export async function fetchDailyMurli(dateStr?: string, forceRefresh = false): P
 
   const dateInfo = getFormattedMurliDate(targetDate);
 
-  // Load configured overrides if set by Admin
+  // Load configured overrides if available
   const murliConfig = getJSON<{ audioUrl: string; pdfUrl: string }>(
     STORAGE_KEYS.murliConfig,
     DEFAULT_MURLI_CONFIG
@@ -834,7 +834,7 @@ export async function fetchDailyMurli(dateStr?: string, forceRefresh = false): P
   const varadanSnippetMl = extractVaradanSnippet(rawMl, true);
   const varadanSnippetEn = extractVaradanSnippet(rawEn, false);
 
-  // Use admin override if custom URL provided, otherwise use dynamic date-based official streaming URL
+  // Use custom URL if provided, otherwise use dynamic date-based official streaming URL
   const audioUrl =
     murliConfig.audioUrl && !murliConfig.audioUrl.includes('example') && murliConfig.audioUrl.trim()
       ? driveToStreamingUrl(murliConfig.audioUrl)

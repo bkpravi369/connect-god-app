@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, View, Text } from 'react-native';
-import { Menu, Shield, Sparkles } from 'lucide-react-native';
+import { Menu, Sparkles } from 'lucide-react-native';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import { APP_NAME, APP_TAGLINE, APP_LOGO } from '@/lib/constants';
 import { BKSunEmblem } from '@/components/Logos';
@@ -8,10 +8,9 @@ import { BKSunEmblem } from '@/components/Logos';
 type Props = {
   onMenuPress: () => void;
   onLogoPress?: () => void;
-  onAdminPress?: () => void;
 };
 
-export function Header({ onMenuPress, onLogoPress, onAdminPress }: Props) {
+export function Header({ onMenuPress, onLogoPress }: Props) {
   const [logoFailed, setLogoFailed] = useState(false);
   const glowAnim = useRef(new Animated.Value(0.4)).current;
   const pulseScale = useRef(new Animated.Value(1)).current;
@@ -103,14 +102,7 @@ export function Header({ onMenuPress, onLogoPress, onAdminPress }: Props) {
           </Animated.View>
         </Pressable>
 
-        <Pressable
-          style={({ pressed }) => [styles.iconButton, styles.adminBtn, pressed && styles.btnPressed]}
-          onPress={onAdminPress}
-          hitSlop={12}
-          accessibilityLabel="Admin Panel"
-        >
-          <Shield color={COLORS.primary[700]} size={19} strokeWidth={2.2} />
-        </Pressable>
+        <View style={styles.rightSpacer} />
       </View>
     </View>
   );
@@ -140,9 +132,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(212, 175, 55, 0.15)',
   },
-  adminBtn: {
-    backgroundColor: 'rgba(255, 245, 245, 0.85)',
-    borderColor: 'rgba(220, 38, 38, 0.15)',
+  rightSpacer: {
+    width: 40,
+    height: 40,
   },
   btnPressed: {
     opacity: 0.75,

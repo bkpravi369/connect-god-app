@@ -2,8 +2,6 @@ import { COLORS } from './theme';
 
 export const APP_NAME = 'Connect GOD';
 export const APP_TAGLINE = 'BK Kozhikode Official App';
-export const ADMIN_PASSWORD = '1234';
-export const ADMIN_PIN = '1234';
 export const APP_LOGO = '/images/channel-logos/connect_god_logo.png';
 
 export type ChecklistItem = {
@@ -736,8 +734,6 @@ export const STORAGE_KEYS = {
   announcement: 'connectgod_announcement',
   checklistEntries: 'connectgod_checklist_entries',
   customTasks: 'connectgod_custom_tasks',
-  adminPassword: 'connectgod_admin_password',
-  adminSession: 'connectgod_admin_session',
   socialLinks: 'connectgod_social_links',
   murliConfig: 'connectgod_murli_config',
   zoomConfig: 'connectgod_zoom_config',

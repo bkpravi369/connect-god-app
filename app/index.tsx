@@ -3,7 +3,6 @@ import { Animated, Easing, Linking, StyleSheet, View } from 'react-native';
 import { Header } from '@/components/Header';
 import { SideDrawer } from '@/components/SideDrawer';
 import { TabBar, TabKey } from '@/components/TabBar';
-import { AdminPanel } from '@/components/AdminPanel';
 import { ChannelSubPageModal } from '@/components/ChannelSubPageModal';
 import { HomeScreen } from './screens/HomeScreen';
 import { MurliScreen } from './screens/MurliScreen';
@@ -44,21 +43,9 @@ import { fetchDriveAudioPlaylist, driveTracksToMeditationItems } from '@/service
 import { initNotificationService } from '@/services/notificationService';
 import { downloadAndCacheAllTrafficTracks } from '@/services/trafficAudioService';
 
-type AdminData = {
-  meditationItems: MeditationItem[];
-  contacts: ContactEntry[];
-  varadan: Varadan;
-  swaman?: Swaman;
-  announcement: Announcement;
-  socialLinks: SocialLinks;
-  murliConfig: MurliConfig;
-  zoomConfig?: ZoomConfig;
-};
-
 export default function App() {
   const [tab, setTab] = useState<TabKey>('home');
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
 
   const initialMurli = getInitialDailyMurli();
@@ -221,17 +208,6 @@ export default function App() {
     });
   };
 
-  const handleAdminData = (data: AdminData) => {
-    setMeditationItems(data.meditationItems);
-    setContacts(data.contacts);
-    setVaradan(data.varadan);
-    if (data.swaman) setSwaman(data.swaman);
-    setAnnouncement(data.announcement);
-    setSocialLinks(data.socialLinks);
-    setMurliConfig(data.murliConfig);
-    if (data.zoomConfig) setZoomConfig(data.zoomConfig);
-  };
-
   const handleSelectChannelById = (channelId: string) => {
     const found = CHANNELS.find((c) => c.id === channelId);
     if (found) setSelectedChannel(found);
@@ -242,7 +218,6 @@ export default function App() {
       <Header
         onMenuPress={() => setDrawerOpen(true)}
         onLogoPress={() => handleTabChange('home')}
-        onAdminPress={() => setAdminOpen(true)}
       />
 
       <Animated.View
@@ -280,18 +255,10 @@ export default function App() {
       <SideDrawer
         visible={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        onAdminPress={() => setAdminOpen(true)}
         onMurliPress={() => handleTabChange('murli')}
         onMeditationPress={() => handleTabChange('media')}
         onSelectChannel={handleSelectChannelById}
         socialLinks={socialLinks}
-      />
-
-      {/* Admin Panel Modal */}
-      <AdminPanel
-        visible={adminOpen}
-        onClose={() => setAdminOpen(false)}
-        onDataChange={handleAdminData}
       />
 
       {/* Channel Hub Sub-page Modal */}

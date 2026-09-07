@@ -10,8 +10,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Sparkles, Youtube } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
+import { Sparkles, Youtube, ArrowRight } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import {
   FEATURED_VIDEOS,
   ZOOM_CONFIG,
@@ -35,6 +36,7 @@ type Props = {
   varadan?: Varadan | null;
   announcement: Announcement;
   onMurliPress: () => void;
+  onAboutPress?: () => void;
   autoContent?: AutoContentResult | null;
   zoomConfig?: ZoomConfig;
   onRefresh?: () => void;
@@ -45,15 +47,25 @@ export default function HomeScreen({
   varadan,
   announcement,
   onMurliPress,
+  onAboutPress,
   autoContent,
   zoomConfig,
   onRefresh,
   isRefreshing,
 }: Props) {
+  const router = useRouter();
   const toast = useToast();
   const [zoomOpen, setZoomOpen] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<VideoPlayItem | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
+
+  const handleAboutPress = () => {
+    if (onAboutPress) {
+      onAboutPress();
+    } else {
+      router.push('/about' as any);
+    }
+  };
   
   // Live Vardan extraction state (Zero manual JSON dependency)
   const [extractedVardan, setExtractedVardan] = useState<string>('');
@@ -104,6 +116,7 @@ export default function HomeScreen({
   const animVaradan = useRef(new Animated.Value(0)).current;
   const animZoom = useRef(new Animated.Value(0)).current;
   const animGrid = useRef(new Animated.Value(0)).current;
+  const animAbout = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const createTiming = (anim: Animated.Value) =>
@@ -118,8 +131,9 @@ export default function HomeScreen({
       createTiming(animVaradan),
       createTiming(animZoom),
       createTiming(animGrid),
+      createTiming(animAbout),
     ]).start();
-  }, [animVaradan, animZoom, animGrid]);
+  }, [animVaradan, animZoom, animGrid, animAbout]);
 
   const makeAnimStyle = (anim: Animated.Value) => ({
     opacity: anim,
@@ -259,6 +273,35 @@ export default function HomeScreen({
             </View>
           ))}
         </View>
+      </Animated.View>
+
+      {/* ── [Card 3] About Brahma Kumaris Feature Card ── */}
+      <Animated.View style={[styles.aboutSection, makeAnimStyle(animAbout)]}>
+        <Pressable
+          style={({ pressed }) => [styles.aboutCard, pressed && styles.aboutCardPressed]}
+          onPress={handleAboutPress}
+          accessibilityRole="button"
+          accessibilityLabel="About Brahma Kumaris Ishwariya Vishwa Vidyalaya"
+        >
+          <View style={styles.aboutHeaderRow}>
+            <View style={styles.aboutBadge}>
+              <Sparkles color="#B45309" size={13} strokeWidth={2.4} />
+              <Text style={styles.aboutBadgeText}>Brahma Kumaris Ishwariya Vishwa Vidyalaya</Text>
+            </View>
+          </View>
+
+          <Text style={styles.aboutMalayalamText}>
+            രാജയോഗ ധ്യാനത്തിലൂടെയും ആത്മീയ ജ്ഞാനത്തിലൂടെയും ആന്തരിക ശാന്തിയും പരമാനന്ദവും അനുഭവിക്കൂ.
+          </Text>
+
+          <View style={styles.aboutFooterRow}>
+            <View style={styles.aboutBtn}>
+              <Text style={styles.aboutBtnText}>കൂടുതലറിയാം (About Us)</Text>
+              <ArrowRight color="#ffffff" size={13} strokeWidth={2.4} />
+            </View>
+            <Text style={styles.aboutSubText}>BK Kozhikode Sub-zone Official App</Text>
+          </View>
+        </Pressable>
       </Animated.View>
 
       {/* ── Modal Popups ── */}
@@ -420,7 +463,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.sm,
-    paddingBottom: SPACING.xxl,
+    paddingBottom: BOTTOM_NAV_PADDING,
     gap: SPACING.md,
   },
   section: {
@@ -468,6 +511,78 @@ const styles = StyleSheet.create({
   },
   gridItem: {
     width: '48.2%',
+  },
+  aboutSection: {
+    marginTop: 2,
+  },
+  aboutCard: {
+    backgroundColor: '#FFFDF7',
+    borderRadius: RADIUS.lg,
+    borderWidth: 1.2,
+    borderColor: '#FDE68A',
+    padding: SPACING.md,
+    gap: 10,
+    ...SHADOWS.sm,
+  },
+  aboutCardPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
+  },
+  aboutHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  aboutBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+  },
+  aboutBadgeText: {
+    fontFamily: FONTS.interSemiBold,
+    fontSize: 11,
+    color: '#92400E',
+    letterSpacing: 0.2,
+  },
+  aboutMalayalamText: {
+    fontFamily: FONTS.interMedium,
+    fontSize: 13.5,
+    lineHeight: 21,
+    color: '#4B5563',
+  },
+  aboutFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 2,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#FEF3C7',
+  },
+  aboutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#8B0000',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.full,
+    ...SHADOWS.sm,
+  },
+  aboutBtnText: {
+    fontFamily: FONTS.interSemiBold,
+    fontSize: 12,
+    color: '#ffffff',
+  },
+  aboutSubText: {
+    fontFamily: FONTS.inter,
+    fontSize: 11,
+    color: '#9CA3AF',
   },
 });
 

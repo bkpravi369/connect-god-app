@@ -20,7 +20,7 @@ import {
   Sparkles,
   ExternalLink,
 } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 
 export default function PrivacyPolicyScreen() {
   const router = useRouter();
@@ -293,6 +293,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: SPACING.md,
+    paddingBottom: BOTTOM_NAV_PADDING,
     gap: SPACING.md,
   },
   // Hero Highlight

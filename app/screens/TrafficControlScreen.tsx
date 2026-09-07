@@ -22,7 +22,7 @@ import {
   Square,
   Repeat,
 } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import {
   PRESET_ALARMS,
   HOURLY_TRAFFIC_TIMES,
@@ -738,7 +738,7 @@ function AddAlarmModal({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.neutral[50] },
-  content: { padding: SPACING.lg },
+  content: { padding: SPACING.lg, paddingBottom: BOTTOM_NAV_PADDING },
   headerCard: {
     flexDirection: 'row',
     alignItems: 'center',

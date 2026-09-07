@@ -28,7 +28,7 @@ import {
   Phone,
   Mail,
 } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 
 const BK_OFFICIAL_LOGO = require('@/assets/bk-official-logo.png');
 
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: SPACING.md,
-    paddingBottom: 40,
+    paddingBottom: BOTTOM_NAV_PADDING,
     gap: SPACING.md,
   },
 

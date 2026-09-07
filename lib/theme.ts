@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 export const COLORS = {
   // Primary - Luxury Sunset Crimson (Deep Maroon / Crimson)
   primary: {
@@ -123,6 +125,11 @@ export const SPACING = {
   '4xl': 40,
   '5xl': 48,
 } as const;
+
+// Generous bottom clearance past the floating bottom navigation bar across all views
+export const BOTTOM_NAV_PADDING = Platform.OS === 'web'
+  ? ('calc(85px + env(safe-area-inset-bottom, 28px))' as unknown as number)
+  : 116;
 
 export const RADIUS = {
   xs: 4,

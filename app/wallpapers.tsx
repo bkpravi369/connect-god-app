@@ -26,7 +26,7 @@ import {
   Eye,
   Info,
 } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import { useToast } from '@/components/ToastProvider';
 import {
   WallpaperItem,
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: HORIZONTAL_PADDING,
-    paddingBottom: 40,
+    paddingBottom: BOTTOM_NAV_PADDING,
     gap: SPACING.md,
   },
 

@@ -30,7 +30,7 @@ import {
   X,
   Repeat,
 } from "lucide-react-native";
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from "@/lib/theme";
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from "@/lib/theme";
 import { useToast } from "@/components/ToastProvider";
 import {
   MainMediaTab,
@@ -1244,7 +1244,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: SPACING.md,
-    paddingBottom: 85,
+    paddingBottom: BOTTOM_NAV_PADDING,
     gap: SPACING.sm,
   },
   headerCard: {

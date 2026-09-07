@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Play, Headphones, Radio, ExternalLink, Sparkles, Youtube, RotateCw } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import { useToast } from '@/components/ToastProvider';
 
 import {
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: SPACING.md,
     paddingTop: SPACING.sm,
-    paddingBottom: SPACING.xl,
+    paddingBottom: BOTTOM_NAV_PADDING,
   },
   headerCard: {
     flexDirection: 'row',

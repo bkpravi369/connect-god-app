@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Phone, MapPin, ChevronDown, ChevronRight, X, Building2 } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import {
   ContactEntry,
   ContactCategory,
@@ -304,7 +304,7 @@ function DistrictHQRow({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.neutral[50] },
-  content: { padding: SPACING.lg },
+  content: { padding: SPACING.lg, paddingBottom: BOTTOM_NAV_PADDING },
   headerCard: {
     flexDirection: 'row',
     alignItems: 'center',

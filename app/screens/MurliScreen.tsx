@@ -20,7 +20,7 @@ import {
   RefreshCw,
   Sparkles,
 } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
+import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import { useToast } from '@/components/ToastProvider';
 import { getJSON, setJSON } from '@/lib/storage';
 import {
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
   content: {
     padding: SPACING.md,
     paddingTop: SPACING.md + 4,
-    paddingBottom: 90,
+    paddingBottom: BOTTOM_NAV_PADDING,
   },
   headerCard: {
     flexDirection: 'row',

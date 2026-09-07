@@ -281,12 +281,12 @@ export default function HomeScreen({
           style={({ pressed }) => [styles.aboutCard, pressed && styles.aboutCardPressed]}
           onPress={handleAboutPress}
           accessibilityRole="button"
-          accessibilityLabel="About Brahma Kumaris Ishwariya Vishwa Vidyalaya"
+          accessibilityLabel="About Prajapita Brahma Kumaris"
         >
           <View style={styles.aboutHeaderRow}>
             <View style={styles.aboutBadge}>
               <Sparkles color="#B45309" size={13} strokeWidth={2.4} />
-              <Text style={styles.aboutBadgeText}>Brahma Kumaris Ishwariya Vishwa Vidyalaya</Text>
+              <Text style={styles.aboutBadgeText} numberOfLines={1}>Prajapita Brahma Kumaris</Text>
             </View>
           </View>
 
@@ -299,7 +299,7 @@ export default function HomeScreen({
               <Text style={styles.aboutBtnText}>കൂടുതലറിയാം (About Us)</Text>
               <ArrowRight color="#ffffff" size={13} strokeWidth={2.4} />
             </View>
-            <Text style={styles.aboutSubText}>BK Kozhikode Sub-zone Official App</Text>
+            <Text style={styles.aboutSubText}>BK Kozhikode Official App</Text>
           </View>
         </Pressable>
       </Animated.View>
@@ -540,12 +540,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: RADIUS.full,
+    maxWidth: '100%',
+    flexShrink: 1,
   },
   aboutBadgeText: {
     fontFamily: FONTS.interSemiBold,
     fontSize: 11,
     color: '#92400E',
     letterSpacing: 0.2,
+    flexShrink: 1,
   },
   aboutMalayalamText: {
     fontFamily: FONTS.interMedium,

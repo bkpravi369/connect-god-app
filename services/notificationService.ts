@@ -6,7 +6,6 @@ import {
 } from '@/lib/constants';
 import { getJSON } from '@/lib/storage';
 import { playTrafficSlot, timeToTrafficSlotKey, stopTrafficAudio } from './trafficAudioService';
-import { syncNativeTrafficAlarms } from './trafficNativePlugin';
 
 // Safely import Capacitor LocalNotifications
 let LocalNotifications: any = null;
@@ -27,8 +26,124 @@ try {
 
 let isInitialized = false;
 
+export interface TrafficSlotConfig {
+  id: number;
+  time: string;
+  slotKey: string;
+  title: string;
+  body: string;
+  channelId: string;
+  channelName: string;
+  sound: string; // File name in android/app/src/main/res/raw/
+}
+
+export const TRAFFIC_SLOT_CONFIGS: TrafficSlotConfig[] = [
+  {
+    id: 101,
+    time: '03:30',
+    slotKey: 'amritvela',
+    title: '🕊️ Traffic Control - 3:30 AM (Amritvela)',
+    body: 'Time for Amritvela meditation & divine soul remembrance.',
+    channelId: 'tc-channel-amritvela',
+    channelName: 'Traffic Control - 3:30 AM (Amritvela)',
+    sound: 'tc_amritvela.mp3',
+  },
+  {
+    id: 102,
+    time: '05:45',
+    slotKey: 'early_morning',
+    title: '🕊️ Traffic Control - 5:45 AM (Early Morning Yoga)',
+    body: 'Start the day in divine peace and pure soul consciousness.',
+    channelId: 'tc-channel-early-morning',
+    channelName: 'Traffic Control - 5:45 AM (Early Morning)',
+    sound: 'tc_early_morning.mp3',
+  },
+  {
+    id: 103,
+    time: '07:00',
+    slotKey: 'morning',
+    title: '🕊️ Traffic Control - 7:00 AM (Morning Study)',
+    body: 'Pause for spiritual reflection and Murli remembrance.',
+    channelId: 'tc-channel-morning',
+    channelName: 'Traffic Control - 7:00 AM (Morning Study)',
+    sound: 'tc_morning.mp3',
+  },
+  {
+    id: 104,
+    time: '10:30',
+    slotKey: 'mid_morning',
+    title: '🕊️ Traffic Control - 10:30 AM (Mid-Morning)',
+    body: 'Withdraw thoughts from external distractions to the supreme light.',
+    channelId: 'tc-channel-mid-morning',
+    channelName: 'Traffic Control - 10:30 AM (Mid-Morning)',
+    sound: 'tc_mid_morning.mp3',
+  },
+  {
+    id: 105,
+    time: '12:00',
+    slotKey: 'noon',
+    title: '🕊️ Traffic Control - 12:00 PM (Noon Remembrance)',
+    body: 'Midday stillness: anchor yourself in supreme peace and bliss.',
+    channelId: 'tc-channel-noon',
+    channelName: 'Traffic Control - 12:00 PM (Noon)',
+    sound: 'tc_noon.mp3',
+  },
+  {
+    id: 106,
+    time: '17:30',
+    slotKey: 'evening',
+    title: '🕊️ Traffic Control - 5:30 PM (Evening Sandhya Yoga)',
+    body: 'Evening Sandhya Yoga: Experience the loving connection with Shiva Baba.',
+    channelId: 'tc-channel-evening',
+    channelName: 'Traffic Control - 5:30 PM (Evening Sandhya)',
+    sound: 'tc_evening.mp3',
+  },
+  {
+    id: 107,
+    time: '19:30',
+    slotKey: 'dusk',
+    title: '🕊️ Traffic Control - 7:30 PM (Dusk Meditation)',
+    body: 'Dusk meditation: Radiate rays of peace and power to the world.',
+    channelId: 'tc-channel-dusk',
+    channelName: 'Traffic Control - 7:30 PM (Dusk)',
+    sound: 'tc_dusk.mp3',
+  },
+  {
+    id: 108,
+    time: '21:30',
+    slotKey: 'night',
+    title: '🕊️ Traffic Control - 9:30 PM (Night Reflection)',
+    body: 'Night reflection: Clear your mind and surrender the day to Baba.',
+    channelId: 'tc-channel-night',
+    channelName: 'Traffic Control - 9:30 PM (Night Reflection)',
+    sound: 'tc_night.mp3',
+  },
+  {
+    id: 109,
+    time: '22:00',
+    slotKey: 'late_night',
+    title: '🕊️ Traffic Control - 10:00 PM (Night Meditation)',
+    body: "Rest peacefully in Baba's loving embrace. Good Night & Om Shanti.",
+    channelId: 'tc-channel-late-night',
+    channelName: 'Traffic Control - 10:00 PM (Night Meditation)',
+    sound: 'tc_late_night.mp3',
+  },
+];
+
+export const HOURLY_CHIME_CHANNEL = {
+  channelId: 'tc-channel-hourly-chime',
+  channelName: 'Hourly Traffic Chimes',
+  sound: 'tc_hourly_chime.mp3',
+};
+
+export const CUSTOM_ALARM_CHANNEL = {
+  channelId: 'tc-channel-custom',
+  channelName: 'Custom Traffic Alarms',
+  sound: 'traffic_chime.mp3',
+};
+
 /**
- * Initializes notification channels with MAX priority and alarm attributes
+ * Initializes notification channels with MAX priority and custom raw audio attributes
  */
 export async function initNotificationService(): Promise<void> {
   if (isInitialized) return;
@@ -43,31 +158,50 @@ export async function initNotificationService(): Promise<void> {
       const perm = await LocalNotifications.requestPermissions().catch(() => ({ display: 'denied' }));
       console.log('[NotificationService] Permission status:', perm);
 
-      // Create high-importance alarm channel with native chime sound
-      await LocalNotifications.createChannel({
-        id: 'traffic-alarms',
-        name: 'Traffic Control Alarms',
-        description: 'Daily Traffic Control spiritual meditation alarms',
-        importance: 5, // AndroidNotificationManager.IMPORTANCE_HIGH/MAX
-        visibility: 1, // VISIBILITY_PUBLIC (shows on lockscreen)
-        sound: 'traffic_chime.mp3',
-        vibration: true,
-        lights: true,
-        lightColor: '#e11d48',
-      }).catch((e: any) => console.warn('[NotificationService] Channel traffic-alarms note:', e));
+      // Create dedicated high-importance notification channels for each distinct time slot
+      for (const slot of TRAFFIC_SLOT_CONFIGS) {
+        await LocalNotifications.createChannel({
+          id: slot.channelId,
+          name: slot.channelName,
+          description: `Daily spiritual meditation alarm for ${slot.time}`,
+          importance: 5, // AndroidNotificationManager.IMPORTANCE_HIGH/MAX
+          visibility: 1, // VISIBILITY_PUBLIC (shows on lockscreen)
+          sound: slot.sound,
+          vibration: true,
+          lights: true,
+          lightColor: '#e11d48',
+        }).catch((e: any) => console.warn(`[NotificationService] Channel ${slot.channelId} note:`, e));
+      }
 
       // Create hourly chime channel
       await LocalNotifications.createChannel({
-        id: 'hourly-chimes',
-        name: 'Hourly Traffic Chimes',
+        id: HOURLY_CHIME_CHANNEL.channelId,
+        name: HOURLY_CHIME_CHANNEL.channelName,
         description: 'Hourly chime for 1-minute meditation pause',
-        importance: 4, // HIGH
-        visibility: 1, // VISIBILITY_PUBLIC
-        sound: 'traffic_chime.mp3',
+        importance: 5,
+        visibility: 1,
+        sound: HOURLY_CHIME_CHANNEL.sound,
         vibration: true,
         lights: true,
         lightColor: '#fbbf24',
-      }).catch((e: any) => console.warn('[NotificationService] Channel hourly-chimes note:', e));
+      }).catch((e: any) => console.warn('[NotificationService] Channel hourly note:', e));
+
+      // Create custom alarms channel
+      await LocalNotifications.createChannel({
+        id: CUSTOM_ALARM_CHANNEL.channelId,
+        name: CUSTOM_ALARM_CHANNEL.channelName,
+        description: 'Custom Traffic Control meditation alarms',
+        importance: 5,
+        visibility: 1,
+        sound: CUSTOM_ALARM_CHANNEL.sound,
+        vibration: true,
+        lights: true,
+        lightColor: '#e11d48',
+      }).catch((e: any) => console.warn('[NotificationService] Channel custom note:', e));
+
+      // Clean up legacy channels if present
+      await LocalNotifications.deleteChannel({ id: 'traffic-alarms' }).catch(() => {});
+      await LocalNotifications.deleteChannel({ id: 'hourly-chimes' }).catch(() => {});
 
       // Register Action Types (Stop / ശാന്തി button)
       await LocalNotifications.registerActionTypes({
@@ -168,16 +302,12 @@ export async function initNotificationService(): Promise<void> {
 }
 
 /**
- * Reschedules all daily traffic alarms & hourly chimes with exact AlarmManager & boot persistence
+ * Reschedules all daily traffic alarms & hourly chimes with exact AlarmManager & boot persistence.
+ * Plays distinct custom raw audio for each scheduled time slot.
  */
 export async function rescheduleAllTrafficAlarms(): Promise<void> {
   const hourlyEnabled = getJSON<boolean>(STORAGE_KEYS.hourlyChimes, true);
   const customAlarms = getJSON<any[]>(STORAGE_KEYS.alarms, []);
-
-  // ── 0. Native Android Hardware AlarmManager Sync (Deep Sleep / Dead App) ──
-  await syncNativeTrafficAlarms(true, hourlyEnabled, customAlarms).catch((err) => {
-    console.warn('[NotificationService] Failed to sync native hardware alarms:', err);
-  });
 
   // ── 1. Native Capacitor Scheduling ────────────────────────────────────
   if (LocalNotifications) {
@@ -190,20 +320,18 @@ export async function rescheduleAllTrafficAlarms(): Promise<void> {
 
       const notificationsToSchedule: any[] = [];
 
-      // 1. Primary Traffic Schedule Alarms (03:30, 05:45, 07:00, 10:30, 12:00, 17:30, 19:30, 21:30)
-      for (const preset of PRESET_ALARMS) {
-        const [hStr, mStr] = preset.time.split(':');
+      // 1. Primary Traffic Schedule Alarms with distinct custom audio per slot
+      for (const slot of TRAFFIC_SLOT_CONFIGS) {
+        const [hStr, mStr] = slot.time.split(':');
         const hour = parseInt(hStr, 10);
         const minute = parseInt(mStr, 10);
-        const slotKey = preset.slotKey || timeToTrafficSlotKey(preset.time);
-        const notifId = hour * 100 + minute; // e.g., 330, 545, 700
 
         notificationsToSchedule.push({
-          id: notifId,
-          title: `🕊️ ${preset.label} (${preset.labelMl || 'ട്രാഫിക് കൺട്രോൾ'})`,
-          body: `Time for traffic control meditation & soul remembrance.`,
-          channelId: 'traffic-alarms',
-          sound: 'traffic_chime.mp3',
+          id: slot.id,
+          title: slot.title,
+          body: slot.body,
+          channelId: slot.channelId,
+          sound: slot.sound,
           smallIcon: 'ic_launcher_round',
           iconColor: '#991B1B',
           actionTypeId: 'TRAFFIC_ALARM_CATEGORY',
@@ -213,11 +341,11 @@ export async function rescheduleAllTrafficAlarms(): Promise<void> {
             allowWhileIdle: true,
             repeats: true,
           },
-          extra: { time: preset.time, slotKey },
+          extra: { time: slot.time, slotKey: slot.slotKey },
         });
       }
 
-      // 2. Hourly Chimes ONLY on Exclusive Non-Traffic Hours (06:00, 08:00, 09:00, 11:00, 13:00, 14:00, 15:00, 16:00, 18:00, 20:30, 22:00)
+      // 2. Hourly Chimes ONLY on Exclusive Non-Traffic Hours
       if (hourlyEnabled) {
         for (const chimeTime of HOURLY_TRAFFIC_TIMES) {
           const [hStr, mStr] = chimeTime.split(':');
@@ -229,8 +357,8 @@ export async function rescheduleAllTrafficAlarms(): Promise<void> {
             id: notifId,
             title: `🔔 Hourly Traffic Control (${chimeTime})`,
             body: `Pause for 1-minute divine remembrance. Om Shanti.`,
-            channelId: 'hourly-chimes',
-            sound: 'traffic_chime.mp3',
+            channelId: HOURLY_CHIME_CHANNEL.channelId,
+            sound: HOURLY_CHIME_CHANNEL.sound,
             smallIcon: 'ic_launcher_round',
             iconColor: '#991B1B',
             actionTypeId: 'TRAFFIC_ALARM_CATEGORY',
@@ -257,8 +385,8 @@ export async function rescheduleAllTrafficAlarms(): Promise<void> {
           id: notifId,
           title: `🕊️ ${custom.label || 'Custom Traffic Alarm'}`,
           body: `Traffic control meditation reminder`,
-          channelId: 'traffic-alarms',
-          sound: 'traffic_chime.mp3',
+          channelId: CUSTOM_ALARM_CHANNEL.channelId,
+          sound: CUSTOM_ALARM_CHANNEL.sound,
           smallIcon: 'ic_launcher_round',
           iconColor: '#991B1B',
           actionTypeId: 'TRAFFIC_ALARM_CATEGORY',
@@ -274,7 +402,7 @@ export async function rescheduleAllTrafficAlarms(): Promise<void> {
 
       if (notificationsToSchedule.length > 0) {
         await LocalNotifications.schedule({ notifications: notificationsToSchedule });
-        console.log(`[NotificationService] Scheduled ${notificationsToSchedule.length} alarms via native Android AlarmManager with boot persistence.`);
+        console.log(`[NotificationService] Scheduled ${notificationsToSchedule.length} autonomous alarms with custom raw audio via Capacitor LocalNotifications.`);
       }
       return;
     } catch (err) {
@@ -287,19 +415,17 @@ export async function rescheduleAllTrafficAlarms(): Promise<void> {
     try {
       await ExpoNotifications.cancelAllScheduledNotificationsAsync();
 
-      for (const preset of PRESET_ALARMS) {
-        const [hStr, mStr] = preset.time.split(':');
+      for (const slot of TRAFFIC_SLOT_CONFIGS) {
+        const [hStr, mStr] = slot.time.split(':');
         const hour = parseInt(hStr, 10);
         const minute = parseInt(mStr, 10);
-        const slotKey = preset.slotKey || timeToTrafficSlotKey(preset.time);
 
         await ExpoNotifications.scheduleNotificationAsync({
           content: {
-            title: `🕊️ ${preset.label} (${preset.labelMl || 'ട്രാഫിക് കൺട്രോൾ'})`,
-            body: `Time for traffic control meditation & soul remembrance.`,
+            title: slot.title,
+            body: slot.body,
             sound: true,
-            channelId: 'traffic-alarms',
-            data: { time: preset.time, slotKey },
+            data: { time: slot.time, slotKey: slot.slotKey },
           },
           trigger: { hour, minute, repeats: true },
         }).catch(() => {});

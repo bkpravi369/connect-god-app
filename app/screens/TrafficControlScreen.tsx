@@ -21,7 +21,6 @@ import {
   Play,
   Square,
   Repeat,
-  ShieldAlert,
 } from 'lucide-react-native';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import {
@@ -40,10 +39,6 @@ import {
   subscribeTrafficPlayback,
 } from '@/services/trafficAudioService';
 import { rescheduleAllTrafficAlarms } from '@/services/notificationService';
-import {
-  checkBatteryOptimizationExemption,
-  promptBatteryOptimizationExemption,
-} from '@/services/trafficNativePlugin';
 
 export type CustomAlarm = {
   id: string;
@@ -82,9 +77,6 @@ export default function TrafficControlScreen() {
   const [addOpen, setAddOpen] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
-  // Battery optimization exemption notice
-  const [showBatteryBanner, setShowBatteryBanner] = useState<boolean>(false);
-
   // Active audio playback state
   const [activePlayingSlot, setActivePlayingSlot] = useState<string | null>(null);
 
@@ -107,11 +99,6 @@ export default function TrafficControlScreen() {
     });
     setPresetStates(map);
 
-    // Check Android battery optimization status
-    checkBatteryOptimizationExemption().then((exempt) => {
-      setShowBatteryBanner(!exempt);
-    });
-
     // Subscribe to traffic audio engine playback state
     const unsubscribe = subscribeTrafficPlayback((slotKey) => {
       setActivePlayingSlot(slotKey);
@@ -122,20 +109,6 @@ export default function TrafficControlScreen() {
       stopTrafficAudio();
     };
   }, []);
-
-  const handleRequestBatteryExemption = async () => {
-    const success = await promptBatteryOptimizationExemption();
-    if (success) {
-      toast.show('Please select "Allow" or "Unrestricted" for Connect GOD', 'info');
-      setTimeout(async () => {
-        const exempt = await checkBatteryOptimizationExemption();
-        setShowBatteryBanner(!exempt);
-        if (exempt) {
-          toast.show('Unrestricted background battery enabled!', 'success');
-        }
-      }, 2500);
-    }
-  };
 
   // ── Toggle Audio Preview for a Slot ──────────────────────────────────
   const handleTogglePreview = async (slotKey: string) => {
@@ -215,27 +188,6 @@ export default function TrafficControlScreen() {
             <Text style={styles.headerSub}>Scheduled meditation alarms & hourly chimes</Text>
           </View>
         </View>
-
-        {/* ── Battery Optimization Exemption Banner (Android) ───────── */}
-        {showBatteryBanner && (
-          <View style={styles.batteryBanner}>
-            <View style={styles.batteryIconWrap}>
-              <ShieldAlert color="#d97706" size={20} strokeWidth={2.2} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.batteryTitle}>Allow Unrestricted Battery</Text>
-              <Text style={styles.batterySub}>
-                To ensure Traffic Control chimes ring on time when your phone is asleep or screen is locked, please enable unrestricted battery usage.
-              </Text>
-              <Pressable
-                style={({ pressed }) => [styles.batteryBtn, pressed && styles.btnPressed]}
-                onPress={handleRequestBatteryExemption}
-              >
-                <Text style={styles.batteryBtnText}>Allow Unrestricted Battery</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
 
         {/* ── 1. Hourly Chimes Master Control ───────────────────────── */}
         <View style={styles.chimesCard}>
@@ -824,53 +776,6 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.sans,
     fontSize: 11,
     color: COLORS.primary[600],
-  },
-  // Battery Exemption Banner
-  batteryBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: SPACING.md,
-    backgroundColor: '#fffbeb',
-    borderRadius: RADIUS.lg,
-    padding: SPACING.md,
-    marginBottom: SPACING.md,
-    borderWidth: 1,
-    borderColor: '#fde68a',
-    ...SHADOWS.sm,
-  },
-  batteryIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: RADIUS.md,
-    backgroundColor: '#fef3c7',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  batteryTitle: {
-    fontFamily: FONTS.sansBold,
-    fontSize: 14,
-    color: '#92400e',
-  },
-  batterySub: {
-    fontFamily: FONTS.sans,
-    fontSize: 12,
-    color: '#b45309',
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  batteryBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#d97706',
-    borderRadius: RADIUS.md,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 7,
-    marginTop: SPACING.sm,
-  },
-  batteryBtnText: {
-    fontFamily: FONTS.sansSemiBold,
-    fontSize: 12,
-    color: '#ffffff',
   },
   // Chimes Card
   chimesCard: {

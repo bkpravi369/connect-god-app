@@ -431,7 +431,7 @@ export function SideDrawer({ visible, onClose, onMurliPress, onMeditationPress, 
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.footerText}>Version 1.0.7</Text>
+            <Text style={styles.footerText}>Version 1.0.8</Text>
             <Text style={styles.footerSub}>Made with devotion · Om Shanti</Text>
           </View>
         </ScrollView>

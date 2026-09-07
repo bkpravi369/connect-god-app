@@ -5,6 +5,7 @@
   "bundledWebRuntime": false,
   "server": {
     "url": "https://app.bkkozhikode.com",
+    "errorPath": "offline.html",
     "cleartext": false,
     "allowNavigation": [
       "app.bkkozhikode.com",

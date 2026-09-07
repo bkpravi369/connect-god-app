@@ -28,15 +28,15 @@ export const YOUTUBE_CHANNELS = [
 
 const PODCAST_STORAGE_KEY = 'connectgod_latest_podcasts_cache';
 
+import { parseVideoTimestamp } from '@/lib/youtube';
+
 export async function fetchPodcastVideos(forceRefresh = false): Promise<PodcastItem[]> {
-  if (!forceRefresh) {
-    const cached = getJSON<PodcastItem[] | null>(PODCAST_STORAGE_KEY, null);
-    if (cached && Array.isArray(cached) && cached.length > 0) {
-      return cached;
-    }
+  const cached = getJSON<PodcastItem[] | null>(PODCAST_STORAGE_KEY, null);
+  if (!forceRefresh && cached && Array.isArray(cached) && cached.length > 0) {
+    return cached;
   }
 
-  const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}&_t=${Date.now()}`;
   try {
     const res = await fetch(`/api/podcast?${cacheBuster}`, {
       cache: 'no-store',
@@ -50,7 +50,7 @@ export async function fetchPodcastVideos(forceRefresh = false): Promise<PodcastI
     if (res.ok) {
       const data = await res.json();
       if (data?.episodes && Array.isArray(data.episodes) && data.episodes.length > 0) {
-        const formatted: PodcastItem[] = data.episodes.map((ep: any) => ({
+        let formatted: PodcastItem[] = data.episodes.map((ep: any) => ({
           id: ep.id || ep.videoId,
           videoId: ep.videoId,
           title: ep.title,
@@ -66,6 +66,20 @@ export async function fetchPodcastVideos(forceRefresh = false): Promise<PodcastI
           category: ep.category,
           description: ep.description,
         }));
+
+        // Safeguard: Prevent downgrading podcast category to an older episode
+        if (cached && Array.isArray(cached)) {
+          const oldPod = cached.find((c) => c.category === 'podcast');
+          const newPodIdx = formatted.findIndex((f) => f.category === 'podcast');
+          if (oldPod && newPodIdx >= 0) {
+            const oldTime = parseVideoTimestamp(oldPod.publishedAt);
+            const newTime = parseVideoTimestamp(formatted[newPodIdx].publishedAt);
+            if (oldTime > newTime) {
+              formatted[newPodIdx] = oldPod;
+            }
+          }
+        }
+
         setJSON(PODCAST_STORAGE_KEY, formatted);
         return formatted;
       }

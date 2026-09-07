@@ -20,6 +20,7 @@ import {
   YouTubeVideo,
   fetchBKSheejaVideoList,
   DEFAULT_BK_SHEEJA_VIDEOS,
+  parseVideoTimestamp,
 } from '@/lib/youtube';
 import { fetchPodcastVideos, getCachedPodcastVideos } from '@/services/podcastService';
 
@@ -56,13 +57,14 @@ const DEFAULT_MEDIA_FEEDS: {
     badgeColor: '#dc2626',
   },
   podcast: {
-    id: 'uA-DDYjAniM',
-    videoId: 'uA-DDYjAniM',
-    title: 'DAILY MURLI PODCAST 22-8-26',
+    id: 'RXggQ0aUt_M',
+    videoId: 'RXggQ0aUt_M',
+    title: 'Daily Murli Podcast 7-9-26',
     channelName: 'Supreme Light Creations',
-    thumbnail: 'https://img.youtube.com/vi/uA-DDYjAniM/hqdefault.jpg',
-    url: 'https://www.youtube.com/watch?v=uA-DDYjAniM',
-    link: 'https://www.youtube.com/watch?v=uA-DDYjAniM',
+    thumbnail: 'https://i.ytimg.com/vi/RXggQ0aUt_M/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=RXggQ0aUt_M',
+    link: 'https://www.youtube.com/watch?v=RXggQ0aUt_M',
+    publishedAt: '2026-09-06T20:30:09.000Z',
     badge: 'TODAY PODCAST',
     badgeColor: '#d97706',
   },
@@ -145,13 +147,19 @@ export default function PodcastScreen() {
         const sheebaItem = podcastItems.find((p) => p.category === 'sheeba') || DEFAULT_MEDIA_FEEDS.sheeba;
         const sheejaItem = podcastItems.find((p) => p.category === 'sheeja') || DEFAULT_MEDIA_FEEDS.sheeja;
 
-        setFeeds({
-          live: liveItem,
-          podcast: podItem,
-          sheeba: sheebaItem,
-          sheeja: sheejaItem,
+        let effectivePod = podItem;
+        setFeeds((prev) => {
+          const currentPodTime = parseVideoTimestamp(prev.podcast?.publishedAt);
+          const newPodTime = parseVideoTimestamp(podItem.publishedAt);
+          effectivePod = newPodTime >= currentPodTime ? podItem : prev.podcast;
+          return {
+            live: liveItem,
+            podcast: effectivePod,
+            sheeba: sheebaItem,
+            sheeja: sheejaItem,
+          };
         });
-        setAllVideosList([liveItem, podItem, sheebaItem, sheejaItem]);
+        setAllVideosList([liveItem, effectivePod, sheebaItem, sheejaItem]);
       }
 
       // 2. Direct client YouTube sync for all channels
@@ -162,15 +170,19 @@ export default function PodcastScreen() {
         const sheebaCard = mapYtToCard(mediaResult.sheebaVideo, DEFAULT_MEDIA_FEEDS.sheeba);
         const sheejaCard = mapYtToCard(mediaResult.sheejaVideo, DEFAULT_MEDIA_FEEDS.sheeja);
 
-        const updatedFeeds = {
-          live: liveCard,
-          podcast: podcastCard,
-          sheeba: sheebaCard,
-          sheeja: sheejaCard,
-        };
-
-        setFeeds(updatedFeeds);
-        setAllVideosList([liveCard, podcastCard, sheebaCard, sheejaCard]);
+        let effectivePod = podcastCard;
+        setFeeds((prev) => {
+          const currentPodTime = parseVideoTimestamp(prev.podcast?.publishedAt);
+          const newPodTime = parseVideoTimestamp(podcastCard.publishedAt);
+          effectivePod = newPodTime >= currentPodTime ? podcastCard : prev.podcast;
+          return {
+            live: liveCard,
+            podcast: effectivePod,
+            sheeba: sheebaCard,
+            sheeja: sheejaCard,
+          };
+        });
+        setAllVideosList([liveCard, effectivePod, sheebaCard, sheejaCard]);
       }
 
       // 3. Dedicated BK Sheeja video list fetch (RSS fallback, cache-busting, silent fallback)

@@ -84,8 +84,27 @@ export function isPodcastEpisode(title: string = '', description: string = ''): 
 }
 
 /**
+ * Safely parses any date string (ISO, RFC 2822, space-separated pubDate) into epoch milliseconds.
+ */
+export function parseVideoTimestamp(dateStr?: string | number): number {
+  if (!dateStr) return 0;
+  if (typeof dateStr === 'number') return dateStr;
+  const direct = new Date(dateStr).getTime();
+  if (!isNaN(direct)) return direct;
+  const isoFormatted = new Date(String(dateStr).replace(' ', 'T') + 'Z').getTime();
+  return isNaN(isoFormatted) ? 0 : isoFormatted;
+}
+
+/**
  * Dedicated Podcast fetcher for Supreme Light Creations.
- * Filters strictly for genuine Podcast episodes, ordered from latest to oldest.
+ * Filters strictly for genuine Podcast episodes, ordered strictly latest to oldest.
+ * Features:
+ *  1. Dynamic cache-busting parameter: &_t=${Date.now()}
+ *  2. Headers: Cache-Control: no-cache, no-store, must-revalidate
+ *  3. Fetch option: cache: 'no-store'
+ *  4. Multi-tier retrieval (Fast RSS -> Direct XML -> YouTube Data API)
+ *  5. Strict publish date descending sorting (index 0 is guaranteed newest)
+ *  6. Anti-downgrade safeguard: Prevents falling back to older episodes
  */
 export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<YouTubeVideo | null> {
   const channelId = 'UC98sbhynzcgLlx9x-SYi6zg';
@@ -96,47 +115,112 @@ export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<Y
     if (cached) return cached;
   }
 
-  const apiKey = getApiKey();
+  const cacheBustParam = `&_t=${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const noCacheHeaders = {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    Pragma: 'no-cache',
+    Expires: '0',
+  };
 
-  // 1. YouTube Data API v3 search strictly filtering for "Podcast" videos on Supreme Light
-  if (apiKey) {
+  const candidateVideos: YouTubeVideo[] = [];
+
+  // 1. Primary: YouTube Channel RSS Feed via rss2json converter (Fastest real-time uploads without API search index lag)
+  try {
+    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+    const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}${cacheBustParam}`;
+    const rRes = await fetch(rssEndpoint, {
+      cache: 'no-store',
+      headers: noCacheHeaders,
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => null);
+
+    if (rRes && rRes.ok) {
+      const rData = await rRes.json();
+      if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
+        const podcastItems = rData.items.filter((item: any) =>
+          isPodcastEpisode(item.title, item.description)
+        );
+
+        for (const item of podcastItems) {
+          const vid = (item.guid || item.link || '').replace(/^yt:video:/, '').split('v=').pop() || '';
+          if (vid) {
+            candidateVideos.push({
+              videoId: vid,
+              title: item.title || 'Daily Murli Malayalam Podcast',
+              subtitle: item.author || 'Supreme Light Creations',
+              description: item.description || '',
+              thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+              url: item.link || `https://www.youtube.com/watch?v=${vid}`,
+              publishedAt: item.pubDate || new Date().toISOString(),
+              badge: 'PODCAST',
+              badgeColor: '#d97706',
+              channelTitle: item.author || 'Supreme Light Creations',
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[YouTube Engine] Dedicated Podcast RSS converter error:', err);
+  }
+
+  // 2. Secondary: Direct YouTube RSS XML fetch & parser (Native iOS / Android without CORS)
+  if (candidateVideos.length === 0) {
     try {
-      const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${channelId}&q=Podcast&order=date&type=video&maxResults=20&key=${apiKey}`;
-      const sRes = await fetch(searchUrl, { cache: 'no-store' }).catch(() => null);
+      const directRssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}${cacheBustParam}`;
+      const directRes = await fetch(directRssUrl, {
+        cache: 'no-store',
+        headers: noCacheHeaders,
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => null);
+
+      if (directRes && directRes.ok) {
+        const xmlText = await directRes.text();
+        const parsedVideos = parseYouTubeRss(xmlText, 'PODCAST', '#d97706');
+        const podcastParsed = parsedVideos.filter((v) => isPodcastEpisode(v.title, v.description));
+        candidateVideos.push(...podcastParsed);
+      }
+    } catch (err) {
+      console.warn('[YouTube Engine] Dedicated Podcast direct XML error:', err);
+    }
+  }
+
+  // 3. Tertiary: YouTube Data API v3 search endpoint with date ordering & cache-busting
+  const apiKey = getApiKey();
+  if (apiKey && candidateVideos.length === 0) {
+    try {
+      const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=25&key=${apiKey}${cacheBustParam}`;
+      const sRes = await fetch(searchUrl, {
+        cache: 'no-store',
+        headers: noCacheHeaders,
+        signal: AbortSignal.timeout(5000),
+      }).catch(() => null);
+
       if (sRes && sRes.ok) {
         const sData = await sRes.json();
         if (sData && Array.isArray(sData.items) && sData.items.length > 0) {
-          // Filter strictly for titles/descriptions containing "Podcast"
           const podcastItems = sData.items.filter((item: any) =>
             isPodcastEpisode(item.snippet?.title, item.snippet?.description)
           );
-
-          // Order by publishedAt latest to oldest
-          podcastItems.sort(
-            (a: any, b: any) =>
-              new Date(b.snippet?.publishedAt || 0).getTime() - new Date(a.snippet?.publishedAt || 0).getTime()
-          );
-
-          const selected = podcastItems.length > 0 ? podcastItems[0] : sData.items[0];
-          const vid = selected.id?.videoId || (typeof selected.id === 'string' ? selected.id : '');
-          if (vid) {
-            const video: YouTubeVideo = {
-              videoId: vid,
-              title: selected.snippet?.title || 'Daily Murli Malayalam Podcast',
-              subtitle: selected.snippet?.channelTitle || 'Supreme Light Creations',
-              description: selected.snippet?.description || '',
-              thumbnail:
-                selected.snippet?.thumbnails?.high?.url ||
-                selected.snippet?.thumbnails?.medium?.url ||
-                `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-              url: `https://www.youtube.com/watch?v=${vid}`,
-              publishedAt: selected.snippet?.publishedAt || new Date().toISOString(),
-              badge: 'PODCAST',
-              badgeColor: '#d97706',
-              channelTitle: selected.snippet?.channelTitle || 'Supreme Light Creations',
-            };
-            saveToCache(cacheKey, video);
-            return video;
+          for (const selected of podcastItems) {
+            const vid = selected.id?.videoId || (typeof selected.id === 'string' ? selected.id : '');
+            if (vid) {
+              candidateVideos.push({
+                videoId: vid,
+                title: selected.snippet?.title || 'Daily Murli Malayalam Podcast',
+                subtitle: selected.snippet?.channelTitle || 'Supreme Light Creations',
+                description: selected.snippet?.description || '',
+                thumbnail:
+                  selected.snippet?.thumbnails?.high?.url ||
+                  selected.snippet?.thumbnails?.medium?.url ||
+                  `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                url: `https://www.youtube.com/watch?v=${vid}`,
+                publishedAt: selected.snippet?.publishedAt || new Date().toISOString(),
+                badge: 'PODCAST',
+                badgeColor: '#d97706',
+                channelTitle: selected.snippet?.channelTitle || 'Supreme Light Creations',
+              });
+            }
           }
         }
       }
@@ -145,57 +229,37 @@ export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<Y
     }
   }
 
-  // 2. RSS bridge fallback with strict podcast filtering
-  try {
-    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
-    const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
-    const rRes = await fetch(rssEndpoint, { cache: 'no-store' }).catch(() => null);
-    if (rRes && rRes.ok) {
-      const rData = await rRes.json();
-      if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
-        const podcastItems = rData.items.filter((item: any) =>
-          isPodcastEpisode(item.title, item.description)
-        );
+  // Strictly order candidate videos by publish date descending (newest first)
+  if (candidateVideos.length > 0) {
+    candidateVideos.sort((a, b) => parseVideoTimestamp(b.publishedAt) - parseVideoTimestamp(a.publishedAt));
+    const topVideo = candidateVideos[0];
 
-        // Sort latest to oldest
-        podcastItems.sort(
-          (a: any, b: any) =>
-            new Date(b.pubDate || 0).getTime() - new Date(a.pubDate || 0).getTime()
-        );
-
-        const selected = podcastItems.length > 0 ? podcastItems[0] : rData.items[0];
-        const vid = (selected.guid || selected.link || '').replace(/^yt:video:/, '').split('v=').pop() || '';
-        if (vid) {
-          const video: YouTubeVideo = {
-            videoId: vid,
-            title: selected.title || 'Daily Murli Malayalam Podcast',
-            subtitle: selected.author || 'Supreme Light Creations',
-            description: selected.description || '',
-            thumbnail: selected.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-            url: selected.link || `https://www.youtube.com/watch?v=${vid}`,
-            publishedAt: selected.pubDate || new Date().toISOString(),
-            badge: 'PODCAST',
-            badgeColor: '#d97706',
-            channelTitle: selected.author || 'Supreme Light Creations',
-          };
-          saveToCache(cacheKey, video);
-          return video;
-        }
-      }
+    // Anti-Downgrade Safeguard: Prevent returning or caching an older episode if existing cache is newer
+    const existingCached = getFromCache<YouTubeVideo>(cacheKey);
+    if (existingCached && parseVideoTimestamp(existingCached.publishedAt) > parseVideoTimestamp(topVideo.publishedAt)) {
+      console.log('[YouTube Engine] Preserving newer cached podcast episode:', existingCached.title);
+      return existingCached;
     }
-  } catch (err) {
-    console.warn('[YouTube Engine] Dedicated Podcast RSS fallback error:', err);
+
+    saveToCache(cacheKey, topVideo);
+    return topVideo;
   }
 
-  // 3. Fallback active podcast item
+  // 4. Fallback to existing cache if available
+  const staleCached = getFromCache<YouTubeVideo>(cacheKey);
+  if (staleCached) {
+    return staleCached;
+  }
+
+  // 5. Fallback active podcast item (Latest verified episode)
   const fallbackPodcast: YouTubeVideo = {
-    videoId: 'uA-DDYjAniM',
-    title: 'DAILY MURLI PODCAST 22-8-26',
+    videoId: 'RXggQ0aUt_M',
+    title: 'Daily Murli Podcast 7-9-26',
     subtitle: 'Supreme Light Creations',
-    description: 'Daily Murli Malayalam Podcast from Supreme Light Creations.',
-    thumbnail: 'https://img.youtube.com/vi/uA-DDYjAniM/hqdefault.jpg',
-    url: 'https://www.youtube.com/watch?v=uA-DDYjAniM',
-    publishedAt: new Date().toISOString(),
+    description: 'Daily Murli Malayalam Podcast from Supreme Light Creations with deep spiritual wisdom.',
+    thumbnail: 'https://i.ytimg.com/vi/RXggQ0aUt_M/hqdefault.jpg',
+    url: 'https://www.youtube.com/watch?v=RXggQ0aUt_M',
+    publishedAt: '2026-09-06T20:30:09.000Z',
     badge: 'PODCAST',
     badgeColor: '#d97706',
     channelTitle: 'Supreme Light Creations',

@@ -1,3 +1,4 @@
+import { isAndroidTrafficApp, TrafficControlNative, TRAFFIC_PRESET_STORAGE_KEY, NativeTrafficSlot } from './trafficNativePlugin';
 import { Platform } from 'react-native';
 import {
   PRESET_ALARMS,
@@ -148,6 +149,19 @@ export const CUSTOM_ALARM_CHANNEL = {
 export async function initNotificationService(): Promise<void> {
   if (isInitialized) return;
   isInitialized = true;
+
+  if (isAndroidTrafficApp()) {
+    try {
+      // A v2 native build owns every automatic playback. No JS receive/tap replay.
+      await TrafficControlNative.getAlarmStatus();
+      await LocalNotifications?.requestPermissions();
+      await rescheduleAllTrafficAlarms();
+    } catch (error) {
+      console.warn('[TrafficControl] Android update or alarm permission required:', error);
+    }
+    return;
+  }
+
 
   // ── 1. Native Capacitor Android Implementation ───────────────────────
   if (LocalNotifications) {
@@ -305,9 +319,42 @@ export async function initNotificationService(): Promise<void> {
  * Reschedules all daily traffic alarms & hourly chimes with exact AlarmManager & boot persistence.
  * Plays distinct custom raw audio for each scheduled time slot.
  */
-export async function rescheduleAllTrafficAlarms(): Promise<void> {
+// Serialize rapid switch changes so an older schedule cannot overwrite the latest settings.
+let scheduleQueue: Promise<void> = Promise.resolve();
+export function rescheduleAllTrafficAlarms(): Promise<void> {
+  scheduleQueue = scheduleQueue.catch(() => {}).then(rescheduleTrafficAlarmsNow);
+  return scheduleQueue;
+}
+
+async function rescheduleTrafficAlarmsNow(): Promise<void> {
   const hourlyEnabled = getJSON<boolean>(STORAGE_KEYS.hourlyChimes, true);
   const customAlarms = getJSON<any[]>(STORAGE_KEYS.alarms, []);
+
+  if (isAndroidTrafficApp()) {
+    const status = await TrafficControlNative.getAlarmStatus();
+    if (status.version < 2) throw new Error('Update the Android app for alarm playback');
+    // Cancel only Traffic Control's old notifications, preserving other app features.
+    const pending = await LocalNotifications.getPending();
+    const legacy = pending.notifications.filter((n: any) =>
+      n.actionTypeId === 'TRAFFIC_ALARM_CATEGORY' ||
+      (n.id >= 101 && n.id <= 109) ||
+      (n.id >= 20000 && n.id <= 22359) || (n.id >= 30000 && n.id <= 32359));
+    if (legacy.length) await LocalNotifications.cancel({ notifications: legacy });
+    const states = getJSON<Record<string, { enabled?: boolean }>>(TRAFFIC_PRESET_STORAGE_KEY, {});
+    const slots: NativeTrafficSlot[] = TRAFFIC_SLOT_CONFIGS
+      .filter(s => states[`preset:${s.time}`]?.enabled !== false)
+      .map(s => ({ id: `preset:${s.time}`, time: s.time, slotKey: s.slotKey, title: s.title }));
+    if (hourlyEnabled) for (const time of HOURLY_TRAFFIC_TIMES) slots.push({
+      id: `hourly:${time}`, time, slotKey: 'hourly_chime', title: 'Hourly Traffic Control',
+    });
+    for (const custom of customAlarms) if (custom.enabled) slots.push({
+      id: `custom:${custom.id}`, time: custom.time,
+      slotKey: timeToTrafficSlotKey(custom.time), title: custom.label || 'Traffic Control',
+      repeatDays: custom.repeatDays,
+    });
+    await TrafficControlNative.scheduleAlarms({ slots: JSON.stringify(slots) });
+    return;
+  }
 
   // ── 1. Native Capacitor Scheduling ────────────────────────────────────
   if (LocalNotifications) {

@@ -9,6 +9,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.AudioFocusRequest;
 import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.IBinder;
@@ -20,12 +22,18 @@ import androidx.core.app.NotificationCompat;
 
 public class TrafficControlAudioService extends Service {
     private static final String TAG = "TrafficAudioService";
-    private static final String CHANNEL_ID = "traffic_control_channel";
+    private static final String CHANNEL_ID = "traffic_control_playback_v2";
     private static final int NOTIFICATION_ID = 99991;
 
     public static final String ACTION_STOP = "com.bkkozhikode.connectgod.ACTION_STOP_TRAFFIC_AUDIO";
 
     private MediaPlayer mediaPlayer;
+    private AudioManager audioManager;
+    private AudioFocusRequest focusRequest;
+    private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
+        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+            stopAudioAndFinish();
+    };
     private PowerManager.WakeLock wakeLock;
 
     @Override
@@ -36,7 +44,7 @@ public class TrafficControlAudioService extends Service {
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (pm != null) {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ConnectGod:AudioServiceWakeLock");
-            wakeLock.acquire(180000); // Max 3 minutes safety timeout
+            wakeLock.acquire(30 * 60 * 1000L); // Safety cap; normally released at completion
         }
     }
 
@@ -48,6 +56,7 @@ public class TrafficControlAudioService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (intent == null) { stopSelf(); return START_NOT_STICKY; }
         String title = intent != null ? intent.getStringExtra("title") : "Traffic Control";
         String slotKey = intent != null ? intent.getStringExtra("slotKey") : "traffic_slot";
 
@@ -60,31 +69,52 @@ public class TrafficControlAudioService extends Service {
             startForeground(NOTIFICATION_ID, notification);
         }
 
-        playChimeAudio();
+        playSlotAudio(slotKey);
 
         return START_NOT_STICKY;
     }
 
-    private void playChimeAudio() {
+    private void playSlotAudio(String slotKey) {
         try {
             if (mediaPlayer != null) {
                 mediaPlayer.release();
                 mediaPlayer = null;
             }
 
-            mediaPlayer = MediaPlayer.create(this, R.raw.traffic_chime);
-            if (mediaPlayer == null) {
-                Log.e(TAG, "Failed to load traffic_chime from raw resources");
-                stopAudioAndFinish();
-                return;
+            int resource;
+            switch (slotKey == null ? "" : slotKey) {
+                case "amritvela": resource = R.raw.tc_amritvela; break;
+                case "early_morning": resource = R.raw.tc_early_morning; break;
+                case "morning": resource = R.raw.tc_morning; break;
+                case "mid_morning": resource = R.raw.tc_mid_morning; break;
+                case "noon": resource = R.raw.tc_noon; break;
+                case "evening": resource = R.raw.tc_evening; break;
+                case "dusk": resource = R.raw.tc_dusk; break;
+                case "night": resource = R.raw.tc_night; break;
+                case "late_night": resource = R.raw.tc_late_night; break;
+                default: resource = R.raw.tc_hourly_chime;
             }
-
             AudioAttributes attributes = new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_ALARM)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                .build();
-
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            int focus;
+            if (Build.VERSION.SDK_INT >= 26) {
+                focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(attributes).setOnAudioFocusChangeListener(focusListener).build();
+                focus = audioManager.requestAudioFocus(focusRequest);
+            } else {
+                focus = audioManager.requestAudioFocus(focusListener, AudioManager.STREAM_ALARM,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+            }
+            if (focus != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) { stopAudioAndFinish(); return; }
+            mediaPlayer = new MediaPlayer();
             mediaPlayer.setAudioAttributes(attributes);
+            mediaPlayer.setWakeMode(this, PowerManager.PARTIAL_WAKE_LOCK);
+            try (android.content.res.AssetFileDescriptor file = getResources().openRawResourceFd(resource)) {
+                mediaPlayer.setDataSource(file.getFileDescriptor(), file.getStartOffset(), file.getLength());
+            }
+            mediaPlayer.prepare();
             mediaPlayer.setLooping(false); // Non-repeating
 
             mediaPlayer.setOnCompletionListener(mp -> {
@@ -117,6 +147,10 @@ public class TrafficControlAudioService extends Service {
             }
         } catch (Exception ignored) {}
 
+        if (audioManager != null) {
+            if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) audioManager.abandonAudioFocusRequest(focusRequest);
+            else audioManager.abandonAudioFocus(focusListener);
+        }
         stopForeground(true);
         stopSelf();
     }
@@ -126,11 +160,12 @@ public class TrafficControlAudioService extends Service {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
                 "Traffic Control Meditation",
-                NotificationManager.IMPORTANCE_HIGH
+                NotificationManager.IMPORTANCE_LOW
             );
             channel.setDescription("High-priority spiritual meditation alarms & hourly chimes");
             channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-            channel.enableVibration(true);
+            channel.setSound(null, null);
+            channel.enableVibration(false);
             channel.setVibrationPattern(new long[] { 0, 400, 200, 400 });
 
             NotificationManager nm = getSystemService(NotificationManager.class);
@@ -165,6 +200,7 @@ public class TrafficControlAudioService extends Service {
             .setSmallIcon(R.mipmap.ic_launcher_round)
             .setContentIntent(openAppPendingIntent)
             .setOngoing(true)
+            .setSilent(true)
             .setAutoCancel(false)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -175,6 +211,10 @@ public class TrafficControlAudioService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (audioManager != null) {
+            if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) audioManager.abandonAudioFocusRequest(focusRequest);
+            else audioManager.abandonAudioFocus(focusListener);
+        }
         try {
             if (mediaPlayer != null) {
                 mediaPlayer.release();

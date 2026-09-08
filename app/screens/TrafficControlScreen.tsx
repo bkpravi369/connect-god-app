@@ -1,3 +1,5 @@
+import { AppState } from 'react-native';
+import { TrafficControlNative, getTrafficAlarmStatus, isAndroidTrafficApp, TRAFFIC_PRESET_STORAGE_KEY } from '@/services/trafficNativePlugin';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -71,6 +73,27 @@ const DEFAULT_CUSTOM_ALARMS: CustomAlarm[] = [];
 
 export default function TrafficControlScreen() {
   const toast = useToast();
+  const [alarmStatus, setAlarmStatus] = useState('Checking alarm setup…');
+  const refreshAlarmStatus = () => getTrafficAlarmStatus().then(setAlarmStatus);
+  const syncAlarms = () => rescheduleAllTrafficAlarms()
+    .then(refreshAlarmStatus)
+    .catch(() => {
+      refreshAlarmStatus();
+      toast.show('Alarm setup needs attention. Check the alarm permission above.', 'info');
+    });
+  useEffect(() => {
+    refreshAlarmStatus();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') syncAlarms();
+    });
+    const onFocus = () => syncAlarms();
+    if (typeof window !== 'undefined') window.addEventListener('focus', onFocus);
+    return () => {
+      subscription.remove();
+      if (typeof window !== 'undefined') window.removeEventListener('focus', onFocus);
+    };
+  }, []);
+
   const [customAlarms, setCustomAlarms] = useState<CustomAlarm[]>([]);
   const [presetStates, setPresetStates] = useState<Record<string, AlarmState>>({});
   const [hourlyChimesEnabled, setHourlyChimesEnabled] = useState<boolean>(true);
@@ -87,7 +110,7 @@ export default function TrafficControlScreen() {
     setCustomAlarms(savedAlarms);
     setHourlyChimesEnabled(savedChimes);
 
-    const map: Record<string, AlarmState> = {};
+    const map = getJSON<Record<string, AlarmState>>(TRAFFIC_PRESET_STORAGE_KEY, {});
     savedAlarms.forEach((r) => {
       map[`custom:${r.id}`] = {
         enabled: r.enabled,
@@ -128,7 +151,7 @@ export default function TrafficControlScreen() {
     const next = !hourlyChimesEnabled;
     setHourlyChimesEnabled(next);
     setJSON(STORAGE_KEYS.hourlyChimes, next);
-    rescheduleAllTrafficAlarms();
+    syncAlarms();
     toast.show(next ? 'Hourly chimes enabled' : 'Hourly chimes muted', 'info');
   };
 
@@ -143,9 +166,12 @@ export default function TrafficControlScreen() {
       const updated = customAlarms.map((a) => (a.id === id ? { ...a, ...nextState } : a));
       setCustomAlarms(updated);
       setJSON(STORAGE_KEYS.alarms, updated);
+    } else {
+      const saved = getJSON<Record<string, AlarmState>>(TRAFFIC_PRESET_STORAGE_KEY, {});
+      setJSON(TRAFFIC_PRESET_STORAGE_KEY, { ...saved, [key]: nextState });
     }
 
-    rescheduleAllTrafficAlarms();
+    syncAlarms();
   };
 
   const addCustomAlarm = (time: string, label: string, state: AlarmState) => {
@@ -163,7 +189,7 @@ export default function TrafficControlScreen() {
     setCustomAlarms(next);
     setJSON(STORAGE_KEYS.alarms, next);
     setPresetStates((prev) => ({ ...prev, [`custom:${newAlarm.id}`]: state }));
-    rescheduleAllTrafficAlarms();
+    syncAlarms();
     toast.show('Custom alarm created', 'success');
   };
 
@@ -171,13 +197,26 @@ export default function TrafficControlScreen() {
     const next = customAlarms.filter((a) => a.id !== id);
     setCustomAlarms(next);
     setJSON(STORAGE_KEYS.alarms, next);
-    rescheduleAllTrafficAlarms();
+    syncAlarms();
     toast.show('Alarm removed', 'info');
   };
 
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+        {isAndroidTrafficApp() && (
+          <View style={{ padding: 16, backgroundColor: '#fff7ed', borderRadius: 12, marginBottom: 16 }}>
+            <Text style={{ color: '#7c2d12', marginBottom: 8 }}>{alarmStatus}</Text>
+            <Pressable onPress={async () => {
+              try {
+                await TrafficControlNative.requestExactAlarmPermission();
+                await syncAlarms();
+              } catch { await refreshAlarmStatus(); }
+            }}>
+              <Text style={{ color: '#991b1b', fontWeight: '700' }}>Set up alarm permission</Text>
+            </Pressable>
+          </View>
+        )}
         {/* Header Card */}
         <View style={styles.headerCard}>
           <View style={styles.headerIconWrap}>

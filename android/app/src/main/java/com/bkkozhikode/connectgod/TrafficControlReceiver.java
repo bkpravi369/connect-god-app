@@ -24,13 +24,16 @@ public class TrafficControlReceiver extends BroadcastReceiver {
         }
 
         try {
+            org.json.JSONObject slot = TrafficControlScheduler.claim(context, intent);
+            if (slot == null) return;
             // 2. Start dedicated Foreground Audio Service
             Intent serviceIntent = new Intent(context, TrafficControlAudioService.class);
-            serviceIntent.putExtras(intent);
+            serviceIntent.putExtra("title", slot.optString("title", "Traffic Control"));
+            serviceIntent.putExtra("slotKey", slot.optString("slotKey", "hourly_chime"));
             ContextCompat.startForegroundService(context, serviceIntent);
 
             // 3. Immediately re-schedule this exact slot for tomorrow
-            TrafficControlScheduler.rescheduleSlotNextDay(context, intent);
+            // The next occurrence was persisted before starting audio.
         } catch (Exception e) {
             Log.e(TAG, "Error starting TrafficControlAudioService: " + e.getMessage(), e);
         } finally {

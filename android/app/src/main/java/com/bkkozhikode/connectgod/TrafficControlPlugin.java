@@ -19,14 +19,28 @@ public class TrafficControlPlugin extends Plugin {
     private static final String TAG = "TrafficControlPlugin";
 
     @PluginMethod
+    public void getAlarmStatus(PluginCall call) {
+        JSObject result = new JSObject();
+        result.put("exactAlarmsAllowed", TrafficControlScheduler.canSchedule(getContext()));
+        result.put("version", 2);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void requestExactAlarmPermission(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 31 && !TrafficControlScheduler.canSchedule(getContext())) {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                Uri.parse("package:" + getContext().getPackageName()));
+            getActivity().startActivity(intent);
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
     public void scheduleAlarms(PluginCall call) {
         try {
-            boolean trafficEnabled = call.getBoolean("trafficEnabled", true);
-            boolean hourlyEnabled = call.getBoolean("hourlyEnabled", true);
-            String customAlarmsJson = call.getString("customAlarms", "[]");
-
-            Context context = getContext();
-            TrafficControlScheduler.scheduleAll(context, trafficEnabled, hourlyEnabled, customAlarmsJson);
+            String slots = call.getString("slots", "[]");
+            TrafficControlScheduler.scheduleAll(getContext(), slots);
 
             JSObject ret = new JSObject();
             ret.put("success", true);

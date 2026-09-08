@@ -1,70 +1,30 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 
+export const TRAFFIC_PRESET_STORAGE_KEY = 'traffic_preset_states_v2';
+export interface NativeTrafficSlot {
+  id: string;
+  time: string;
+  slotKey: string;
+  title: string;
+  repeatDays?: number[] | null;
+}
 export interface TrafficControlNativePlugin {
-  scheduleAlarms(options?: {
-    trafficEnabled?: boolean;
-    hourlyEnabled?: boolean;
-    customAlarms?: string;
-  }): Promise<{ success: boolean }>;
+  scheduleAlarms(options: { slots: string }): Promise<{ success: boolean }>;
   cancelAllAlarms(): Promise<{ success: boolean }>;
-  isIgnoringBatteryOptimizations(): Promise<{ isIgnoring: boolean }>;
-  requestIgnoreBatteryOptimizations(): Promise<{ requested: boolean }>;
+  getAlarmStatus(): Promise<{ exactAlarmsAllowed: boolean; version: number }>;
+  requestExactAlarmPermission(): Promise<void>;
 }
-
 export const TrafficControlNative = registerPlugin<TrafficControlNativePlugin>('TrafficControlNative');
+export const isAndroidTrafficApp = () => Capacitor.getPlatform() === 'android';
 
-/**
- * Synchronizes Traffic Control alarms directly with native Android AlarmManager.
- */
-export async function syncNativeTrafficAlarms(
-  trafficEnabled = true,
-  hourlyEnabled = true,
-  customAlarms: any[] = []
-): Promise<boolean> {
-  if (Capacitor.getPlatform() !== 'android') {
-    return false;
-  }
+export async function getTrafficAlarmStatus(): Promise<string> {
+  if (!isAndroidTrafficApp()) return 'Background alarms require the Android app.';
   try {
-    const res = await TrafficControlNative.scheduleAlarms({
-      trafficEnabled,
-      hourlyEnabled,
-      customAlarms: JSON.stringify(customAlarms || []),
-    });
-    console.log('[TrafficControlNative] Native hardware alarms synchronized successfully:', res);
-    return res?.success === true;
-  } catch (err) {
-    console.warn('[TrafficControlNative] Error synchronizing native alarms:', err);
-    return false;
-  }
-}
-
-/**
- * Checks if the app is already exempt from Android battery optimization (Doze mode killer).
- */
-export async function checkBatteryOptimizationExemption(): Promise<boolean> {
-  if (Capacitor.getPlatform() !== 'android') {
-    return true;
-  }
-  try {
-    const res = await TrafficControlNative.isIgnoringBatteryOptimizations();
-    return res?.isIgnoring === true;
+    const status = await TrafficControlNative.getAlarmStatus();
+    return status.exactAlarmsAllowed
+      ? 'Alarm permission allowed. Songs use your phone’s alarm volume.'
+      : 'Allow Alarms & reminders to play songs on time with the app closed.';
   } catch {
-    return true;
-  }
-}
-
-/**
- * Prompts user to exempt app from Android battery optimizations.
- */
-export async function promptBatteryOptimizationExemption(): Promise<boolean> {
-  if (Capacitor.getPlatform() !== 'android') {
-    return false;
-  }
-  try {
-    const res = await TrafficControlNative.requestIgnoreBatteryOptimizations();
-    return res?.requested === true;
-  } catch (err) {
-    console.warn('[TrafficControlNative] Failed to request battery exemption:', err);
-    return false;
+    return 'Update the Android app to enable reliable background alarms.';
   }
 }

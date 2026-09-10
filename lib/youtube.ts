@@ -555,6 +555,12 @@ export async function fetchChannelVideoList(
 
   const apiKey = getApiKey();
 
+  const isShortItem = (t = '', d = '') => {
+    const text = `${t} ${d}`.toLowerCase();
+    return text.includes('#shorts') || text.includes('#short') || text.includes('/shorts/') || /\bshorts\b/i.test(t);
+  };
+  const shouldFilterShorts = channelId === 'UCtj3aB4eYUzi2GssD-g9aBA' || channelId === 'UCvQFuOM38iAZD7ltMujOq-g';
+
   // 2. Primary: YouTube Data API v3 playlistItems (1 quota unit, guaranteed chronological, instant)
   if (apiKey) {
     try {
@@ -568,7 +574,7 @@ export async function fetchChannelVideoList(
       if (res && res.ok) {
         const pData = await res.json().catch(() => null);
         if (pData && Array.isArray(pData.items) && pData.items.length > 0) {
-          const videos: YouTubeVideo[] = pData.items
+          let videos: YouTubeVideo[] = pData.items
             .map((item: any) => {
               const vid = item.snippet?.resourceId?.videoId || item.id?.videoId || '';
               if (!vid) return null;
@@ -590,6 +596,10 @@ export async function fetchChannelVideoList(
               };
             })
             .filter(Boolean) as YouTubeVideo[];
+
+          if (shouldFilterShorts) {
+            videos = videos.filter((v) => !isShortItem(v.title, v.description));
+          }
 
           if (videos.length > 0) {
             saveToCache(cacheKey, videos);
@@ -616,7 +626,7 @@ export async function fetchChannelVideoList(
       if (res && res.ok) {
         const sData = await res.json().catch(() => null);
         if (sData && Array.isArray(sData.items) && sData.items.length > 0) {
-          const videos: YouTubeVideo[] = sData.items
+          let videos: YouTubeVideo[] = sData.items
             .map((item: any) => {
               const vid = item.id?.videoId || (typeof item.id === 'string' ? item.id : '');
               if (!vid) return null;
@@ -637,6 +647,10 @@ export async function fetchChannelVideoList(
               };
             })
             .filter(Boolean) as YouTubeVideo[];
+
+          if (shouldFilterShorts) {
+            videos = videos.filter((v) => !isShortItem(v.title, v.description));
+          }
 
           if (videos.length > 0) {
             saveToCache(cacheKey, videos);
@@ -665,7 +679,7 @@ export async function fetchChannelVideoList(
     if (rRes && rRes.ok) {
       const rData = await rRes.json().catch(() => null);
       if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
-        const videos: YouTubeVideo[] = rData.items
+        let videos: YouTubeVideo[] = rData.items
           .map((item: any) => {
             const vid = (item.guid || item.link || '').replace(/^yt:video:/, '').split('v=').pop() || '';
             if (!vid) return null;
@@ -683,6 +697,10 @@ export async function fetchChannelVideoList(
             };
           })
           .filter(Boolean) as YouTubeVideo[];
+
+        if (shouldFilterShorts) {
+          videos = videos.filter((v) => !isShortItem(v.title, v.description));
+        }
 
         if (videos.length > 0) {
           saveToCache(cacheKey, videos);
@@ -784,7 +802,69 @@ export async function syncAllYouTubeMedia(
   sheebaVideo: YouTubeVideo | null;
   sheejaVideo: YouTubeVideo | null;
 }> {
-  console.log(`[YouTube Engine] Starting independent uploads sync for all 4 channels (bypassCache: ${bypassCache})...`);
+  console.log(`[YouTube Engine] Starting sync for all 4 channels (bypassCache: ${bypassCache})...`);
+
+  // 0. Primary: Query unified Serverless Edge CDN API (/api/media-hub)
+  try {
+    const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const apiUrl = typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('file://')
+      ? `${window.location.origin}/api/media-hub?${cacheBuster}`
+      : `https://app.bkkozhikode.com/api/media-hub?${cacheBuster}`;
+
+    const res = await fetch(apiUrl, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+      },
+      signal: createTimeoutSignal(4000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.success) {
+        const toYt = (v: any, defaultBadge: string, defaultColor: string): YouTubeVideo | null => {
+          if (!v || !v.videoId) return null;
+          return {
+            videoId: v.videoId,
+            title: v.title,
+            subtitle: v.subtitle || v.channelName || '',
+            description: v.description || '',
+            thumbnail: v.thumbnail || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+            url: v.url || `https://www.youtube.com/watch?v=${v.videoId}`,
+            publishedAt: v.publishedAt || new Date().toISOString(),
+            badge: v.badge || defaultBadge,
+            badgeColor: v.badgeColor || defaultColor,
+            isLive: !!v.isLive,
+            channelTitle: v.channelName || v.subtitle,
+          };
+        };
+
+        const liveVideo = toYt(data.liveVideo, 'LIVE CLASS', '#dc2626');
+        const podcastVideo = toYt(data.podcastVideo, 'PODCAST', '#d97706');
+        const sheebaVideo = toYt(data.sheebaVideo, 'CLASSES', '#c13584');
+        const sheejaVideo = toYt(data.sheejaVideo, 'MEDITATION', '#7c3aed');
+
+        if (liveVideo && onChannelLoaded) onChannelLoaded('liveVideo', liveVideo);
+        if (podcastVideo && onChannelLoaded) onChannelLoaded('podcastVideo', podcastVideo);
+        if (sheebaVideo && onChannelLoaded) onChannelLoaded('sheebaVideo', sheebaVideo);
+        if (sheejaVideo && onChannelLoaded) onChannelLoaded('sheejaVideo', sheejaVideo);
+
+        if (liveVideo || podcastVideo || sheebaVideo || sheejaVideo) {
+          console.log('[YouTube Engine] Successfully synced all 4 channels via unified /api/media-hub Edge CDN');
+          return {
+            liveVideo,
+            podcastVideo,
+            sheebaVideo,
+            sheejaVideo,
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[YouTube Engine] /api/media-hub sync warning, falling back to direct client sync:', err);
+  }
 
   // 1. BK S Calicut Live / Daily Murli Class
   const fetchLive = async (): Promise<YouTubeVideo | null> => {

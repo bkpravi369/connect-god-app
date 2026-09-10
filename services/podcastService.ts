@@ -38,16 +38,33 @@ export async function fetchPodcastVideos(forceRefresh = false): Promise<PodcastI
 
   const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}&_t=${Date.now()}`;
   try {
-    const res = await fetch(`/api/podcast?${cacheBuster}`, {
+    const hubUrl = typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('file://')
+      ? `${window.location.origin}/api/media-hub?${cacheBuster}`
+      : `/api/media-hub?${cacheBuster}`;
+
+    let res = await fetch(hubUrl, {
       cache: 'no-store',
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         Pragma: 'no-cache',
         Expires: '0',
       },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) {
+      signal: AbortSignal.timeout(4500),
+    }).catch(() => null);
+
+    if (!res || !res.ok) {
+      res = await fetch(`/api/podcast?${cacheBuster}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+        },
+        signal: AbortSignal.timeout(4500),
+      }).catch(() => null);
+    }
+
+    if (res && res.ok) {
       const data = await res.json();
       if (data?.episodes && Array.isArray(data.episodes) && data.episodes.length > 0) {
         let formatted: PodcastItem[] = data.episodes.map((ep: any) => ({

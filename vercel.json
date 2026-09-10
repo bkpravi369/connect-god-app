@@ -3,7 +3,20 @@
   "outputDirectory": "dist",
   "headers": [
     {
-      "source": "/api/(.*)",
+      "source": "/api/media-hub(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, s-maxage=60, stale-while-revalidate=120"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    },
+    {
+      "source": "/api/((?!media-hub).*)",
       "headers": [
         {
           "key": "Cache-Control",

@@ -83,7 +83,7 @@ export default function App() {
     setIsRefreshing(true);
     try {
       clearYouTubeCache();
-      const murliData = await fetchDailyMurli(undefined, true);
+      const murliData = await fetchDailyMurli(undefined, true).catch(() => null);
       if (murliData && murliData.varadanSnippetMl) {
         setVaradan({
           textMl: murliData.varadanSnippetMl,
@@ -93,7 +93,9 @@ export default function App() {
       }
       const [swamanRes, autoRes] = await Promise.allSettled([
         fetchDailySwaman(murliData?.date, murliData?.fullTextMl),
-        fetchAutoContent(true),
+        fetchAutoContent(true, (progressive) => {
+          setAutoContent((prev) => ({ ...prev, ...progressive }));
+        }),
       ]);
       if (swamanRes.status === 'fulfilled' && swamanRes.value?.textMl) {
         setSwaman(swamanRes.value);
@@ -101,12 +103,14 @@ export default function App() {
       if (autoRes.status === 'fulfilled' && autoRes.value) {
         setAutoContent(autoRes.value);
       }
+    } catch (e) {
+      console.error('[App] Refresh all error:', e);
     } finally {
       setIsRefreshing(false);
     }
   };
 
-  // ── Load persisted dynamic content on mount ──
+  // ── 1. Load persisted dynamic content on mount ──
   useEffect(() => {
     const today = getTodayISTDateString();
     purgeStaleStorageKeys(today);
@@ -123,9 +127,6 @@ export default function App() {
     setSocialLinks(getJSON(STORAGE_KEYS.socialLinks, DEFAULT_SOCIAL_LINKS));
     setMurliConfig(getJSON(STORAGE_KEYS.murliConfig, DEFAULT_MURLI_CONFIG));
     setZoomConfig(getJSON(STORAGE_KEYS.zoomConfig, DEFAULT_ZOOM_CONFIG));
-
-    // Clear stale YouTube cache on initial startup
-    clearYouTubeCache();
 
     // Fetch daily Swaman
     fetchDailySwaman()
@@ -162,21 +163,66 @@ export default function App() {
         }
       })
       .catch(() => {});
+  }, []);
 
-    // Force immediate live YouTube media fetch bypassing cache
-    fetchAutoContent(true)
-      .then((result) => {
-        setAutoContent(result);
+  // ── 2. Dedicated Isolated YouTube Auto-Fetch for all 4 Channels ──
+  useEffect(() => {
+    let isMounted = true;
+
+    // Load initial cached auto-content immediately for zero-blank display
+    const cached = getCachedAutoContent();
+    if (cached && isMounted) {
+      setAutoContent((prev) => prev || cached);
+    }
+
+    // Trigger progressive isolated video fetch for all 4 channels:
+    // 1. BK S Calicut Live / Daily Murli
+    // 2. Supreme Light Creations (Daily Podcast)
+    // 3. BK Sheeba
+    // 4. BK Sheeja
+    try {
+      fetchAutoContent(true, (progressive) => {
+        if (isMounted && progressive) {
+          setAutoContent((prev) => ({
+            ...prev,
+            ...progressive,
+          }));
+        }
       })
-      .catch((err) => {
-        console.warn('[App] Auto content fetch error:', err);
+        .then((result) => {
+          if (isMounted && result) {
+            setAutoContent(result);
+          }
+        })
+        .catch((err) => {
+          console.error('[App] YouTube auto-fetch isolated error:', err);
+        });
+    } catch (e) {
+      console.error('[App] Fatal error initiating YouTube auto-fetch:', e);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // ── 3. Isolated Background Notifications & Traffic Audio Setup ──
+  useEffect(() => {
+    try {
+      initNotificationService().catch((e) => {
+        console.error('[App] Notification init warning:', e);
       });
+    } catch (e) {
+      console.error('[App] Failed to start notification service:', e);
+    }
 
-    // Initialize background notifications & alarms
-    initNotificationService().catch(() => {});
-
-    // Automatically check and cache Traffic Control MP3s for 100% offline playback
-    downloadAndCacheAllTrafficTracks().catch(() => {});
+    try {
+      downloadAndCacheAllTrafficTracks().catch((e) => {
+        console.error('[App] Traffic audio download warning:', e);
+      });
+    } catch (e) {
+      console.error('[App] Failed to start traffic audio download:', e);
+    }
   }, []);
 
   // When auto content arrives, update varadan if auto-extracted

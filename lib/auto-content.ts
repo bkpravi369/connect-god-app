@@ -1,7 +1,7 @@
 import { AutomationConfig, DEFAULT_AUTOMATION_CONFIG, Varadan, STORAGE_KEYS } from '@/lib/constants';
 import { getJSON, setJSON, getDateStampedJSON, setDateStampedJSON } from '@/lib/storage';
 import { getTodayISTDateString } from '@/services/murliService';
-import { syncAllYouTubeMedia, YouTubeVideo } from '@/lib/youtube';
+import { syncAllYouTubeMedia, YouTubeVideo, ChannelSyncKey } from '@/lib/youtube';
 
 export type AutoVideo = {
   videoId: string;
@@ -70,13 +70,60 @@ function mapYtToAutoVideo(yt: YouTubeVideo | null, defaultBadge: string, default
   };
 }
 
-export async function fetchAutoContent(bypassCache = false): Promise<AutoContentResult> {
+export async function fetchAutoContent(
+  bypassCache = false,
+  onProgressiveUpdate?: (partial: AutoContentResult) => void
+): Promise<AutoContentResult> {
   const localCached = getCachedAutoContent();
 
+  let progressiveResult: AutoContentResult = {
+    config: DEFAULT_AUTOMATION_CONFIG,
+    murliVideo: localCached?.murliVideo || null,
+    podcastVideo: localCached?.podcastVideo || null,
+    liveVideo: localCached?.liveVideo || null,
+    sheebaVideo: localCached?.sheebaVideo || null,
+    sheejaVideo: localCached?.sheejaVideo || null,
+    varadan: localCached?.varadan || null,
+    fullMurliText: localCached?.fullMurliText || null,
+  };
+
+  const handleChannelLoaded = (channelKey: ChannelSyncKey, video: YouTubeVideo) => {
+    let badge = 'CLASS';
+    let badgeColor = '#0284c7';
+    if (channelKey === 'liveVideo') {
+      badge = 'LIVE';
+      badgeColor = '#dc2626';
+    } else if (channelKey === 'podcastVideo') {
+      badge = 'PODCAST';
+      badgeColor = '#d97706';
+    } else if (channelKey === 'sheebaVideo') {
+      badge = 'CLASSES';
+      badgeColor = '#c13584';
+    } else if (channelKey === 'sheejaVideo') {
+      badge = 'MEDITATION';
+      badgeColor = '#7c3aed';
+    }
+
+    const autoVid = mapYtToAutoVideo(video, badge, badgeColor);
+    if (autoVid) {
+      progressiveResult = {
+        ...progressiveResult,
+        [channelKey]: autoVid,
+      };
+      if (onProgressiveUpdate) {
+        try {
+          onProgressiveUpdate({ ...progressiveResult });
+        } catch (e) {
+          console.error('[AutoContent] onProgressiveUpdate callback error:', e);
+        }
+      }
+    }
+  };
+
   try {
-    const [configResult, ytResult] = await Promise.all([
+    const [configResult, ytResult] = await Promise.allSettled([
       fetchAutomationConfig().catch(() => DEFAULT_AUTOMATION_CONFIG),
-      syncAllYouTubeMedia(bypassCache).catch(() => ({
+      syncAllYouTubeMedia(bypassCache, handleChannelLoaded).catch(() => ({
         liveVideo: null,
         podcastVideo: null,
         sheebaVideo: null,
@@ -84,37 +131,45 @@ export async function fetchAutoContent(bypassCache = false): Promise<AutoContent
       })),
     ]);
 
+    const resolvedConfig = configResult.status === 'fulfilled' ? configResult.value : DEFAULT_AUTOMATION_CONFIG;
+    const resolvedYt = ytResult.status === 'fulfilled' ? ytResult.value : {
+      liveVideo: null,
+      podcastVideo: null,
+      sheebaVideo: null,
+      sheejaVideo: null,
+    };
+
     const varadan = localCached?.varadan || null;
 
-    const ytLive = mapYtToAutoVideo(ytResult.liveVideo, 'LIVE', '#dc2626');
-    const ytPodcast = mapYtToAutoVideo(ytResult.podcastVideo, 'PODCAST', '#d97706');
-    const ytSheeba = mapYtToAutoVideo(ytResult.sheebaVideo, 'CLASSES', '#c13584');
-    const ytSheeja = mapYtToAutoVideo(ytResult.sheejaVideo, 'MEDITATION', '#7c3aed');
+    const ytLive = mapYtToAutoVideo(resolvedYt.liveVideo, 'LIVE', '#dc2626');
+    const ytPodcast = mapYtToAutoVideo(resolvedYt.podcastVideo, 'PODCAST', '#d97706');
+    const ytSheeba = mapYtToAutoVideo(resolvedYt.sheebaVideo, 'CLASSES', '#c13584');
+    const ytSheeja = mapYtToAutoVideo(resolvedYt.sheejaVideo, 'MEDITATION', '#7c3aed');
 
     const result: AutoContentResult = {
-      config: configResult,
+      config: resolvedConfig,
       murliVideo: localCached?.murliVideo || null,
-      podcastVideo: ytPodcast || localCached?.podcastVideo || null,
-      liveVideo: ytLive || localCached?.liveVideo || null,
-      sheebaVideo: ytSheeba || localCached?.sheebaVideo || null,
-      sheejaVideo: ytSheeja || localCached?.sheejaVideo || null,
+      podcastVideo: ytPodcast || progressiveResult.podcastVideo || localCached?.podcastVideo || null,
+      liveVideo: ytLive || progressiveResult.liveVideo || localCached?.liveVideo || null,
+      sheebaVideo: ytSheeba || progressiveResult.sheebaVideo || localCached?.sheebaVideo || null,
+      sheejaVideo: ytSheeja || progressiveResult.sheejaVideo || localCached?.sheejaVideo || null,
       varadan,
       fullMurliText: localCached?.fullMurliText || null,
     };
 
     // Cache to local storage for offline-first instant loading with date stamp
     setDateStampedJSON(AUTO_CACHE_KEY, getTodayISTDateString(), result);
+    if (onProgressiveUpdate) {
+      try {
+        onProgressiveUpdate(result);
+      } catch (e) {
+        console.error('[AutoContent] onProgressiveUpdate final callback error:', e);
+      }
+    }
     return result;
-  } catch {
-    return localCached || {
-      config: DEFAULT_AUTOMATION_CONFIG,
-      murliVideo: null,
-      podcastVideo: null,
-      liveVideo: null,
-      sheebaVideo: null,
-      sheejaVideo: null,
-      varadan: null,
-      fullMurliText: null,
-    };
+  } catch (err) {
+    console.error('[AutoContent] Fetch auto content error:', err);
+    return localCached || progressiveResult;
   }
 }
+

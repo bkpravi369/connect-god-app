@@ -74,16 +74,31 @@ const DEFAULT_CUSTOM_ALARMS: CustomAlarm[] = [];
 export default function TrafficControlScreen() {
   const toast = useToast();
   const [alarmStatus, setAlarmStatus] = useState('Checking alarm setup…');
-  const refreshAlarmStatus = () => getTrafficAlarmStatus().then(setAlarmStatus);
-  const syncAlarms = () => rescheduleAllTrafficAlarms()
-    .then(refreshAlarmStatus)
-    .catch(() => {
-      refreshAlarmStatus();
-      toast.show('Alarm setup needs attention. Check the alarm permission above.', 'info');
-    });
+  const refreshAlarmStatus = () => {
+    try {
+      getTrafficAlarmStatus()
+        .then((s) => setAlarmStatus(s))
+        .catch((e) => console.error('[TrafficControlScreen] refreshAlarmStatus error:', e));
+    } catch (e) {
+      console.error('[TrafficControlScreen] refreshAlarmStatus sync error:', e);
+    }
+  };
+  const syncAlarms = () => {
+    try {
+      rescheduleAllTrafficAlarms()
+        .then(refreshAlarmStatus)
+        .catch((e) => {
+          console.error('[TrafficControlScreen] syncAlarms error:', e);
+          refreshAlarmStatus();
+          toast.show('Alarm setup needs attention. Check the alarm permission above.', 'info');
+        });
+    } catch (e) {
+      console.error('[TrafficControlScreen] syncAlarms sync error:', e);
+    }
+  };
   useEffect(() => {
     refreshAlarmStatus();
-    const subscription = AppState.addEventListener('change', state => {
+    const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') syncAlarms();
     });
     const onFocus = () => syncAlarms();

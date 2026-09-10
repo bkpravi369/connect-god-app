@@ -162,8 +162,27 @@ export default function PodcastScreen() {
         setAllVideosList([liveItem, effectivePod, sheebaItem, sheejaItem]);
       }
 
-      // 2. Direct client YouTube sync for all channels
-      const mediaResult = await syncAllYouTubeMedia(bypassCache);
+      // 2. Direct client YouTube sync for all channels with progressive rendering
+      const mediaResult = await syncAllYouTubeMedia(bypassCache, (channelKey, video) => {
+        setFeeds((prev) => {
+          const updated = { ...prev };
+          if (channelKey === 'liveVideo') {
+            updated.live = mapYtToCard(video, DEFAULT_MEDIA_FEEDS.live);
+          } else if (channelKey === 'podcastVideo') {
+            const currentPodTime = parseVideoTimestamp(prev.podcast?.publishedAt);
+            const newPodTime = parseVideoTimestamp(video.publishedAt);
+            if (newPodTime >= currentPodTime) {
+              updated.podcast = mapYtToCard(video, DEFAULT_MEDIA_FEEDS.podcast);
+            }
+          } else if (channelKey === 'sheebaVideo') {
+            updated.sheeba = mapYtToCard(video, DEFAULT_MEDIA_FEEDS.sheeba);
+          } else if (channelKey === 'sheejaVideo') {
+            updated.sheeja = mapYtToCard(video, DEFAULT_MEDIA_FEEDS.sheeja);
+          }
+          setAllVideosList([updated.live, updated.podcast, updated.sheeba, updated.sheeja]);
+          return updated;
+        });
+      });
       if (mediaResult) {
         const liveCard = mapYtToCard(mediaResult.liveVideo, DEFAULT_MEDIA_FEEDS.live);
         const podcastCard = mapYtToCard(mediaResult.podcastVideo, DEFAULT_MEDIA_FEEDS.podcast);

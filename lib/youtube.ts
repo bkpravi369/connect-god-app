@@ -24,6 +24,36 @@ const BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 export const HARDCODED_YOUTUBE_API_KEY = 'AIzaSyDU7qYO0XNjJHRorqitiRftFxFLuFhCNks';
 
+/**
+ * Safe AbortSignal timeout helper that never crashes in older browsers / webviews / Hermes.
+ */
+export function createTimeoutSignal(ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal !== 'undefined' && typeof (AbortSignal as any).timeout === 'function') {
+    try {
+      return (AbortSignal as any).timeout(ms);
+    } catch {
+      // Fallback
+    }
+  }
+  if (typeof AbortController !== 'undefined') {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch {}
+      }, ms);
+      if (typeof (timer as any).unref === 'function') {
+        (timer as any).unref();
+      }
+      return controller.signal;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 export function getApiKey(): string {
   return (
     process.env.EXPO_PUBLIC_YOUTUBE_API_KEY ||
@@ -123,55 +153,102 @@ export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<Y
   };
 
   const candidateVideos: YouTubeVideo[] = [];
+  const apiKey = getApiKey();
 
-  // 1. Primary: YouTube Channel RSS Feed via rss2json converter (Fastest real-time uploads without API search index lag)
-  try {
-    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
-    const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}${cacheBustParam}`;
-    const rRes = await fetch(rssEndpoint, {
-      cache: 'no-store',
-      headers: noCacheHeaders,
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => null);
+  // 1. Primary: YouTube Data API v3 playlistItems (1 quota unit, guaranteed ordered, instant)
+  if (apiKey) {
+    try {
+      const playlistUrl = `${BASE_URL}/playlistItems?part=snippet&playlistId=UU98sbhynzcgLlx9x-SYi6zg&maxResults=25&key=${apiKey}${cacheBustParam}`;
+      const pRes = await fetch(playlistUrl, {
+        headers: noCacheHeaders,
+        signal: createTimeoutSignal(4000),
+      }).catch(() => null);
 
-    if (rRes && rRes.ok) {
-      const rData = await rRes.json();
-      if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
-        const podcastItems = rData.items.filter((item: any) =>
-          isPodcastEpisode(item.title, item.description)
-        );
+      if (pRes && pRes.ok) {
+        const pData = await pRes.json().catch(() => null);
+        if (pData && Array.isArray(pData.items) && pData.items.length > 0) {
+          const podcastItems = pData.items.filter((item: any) =>
+            isPodcastEpisode(item.snippet?.title, item.snippet?.description)
+          );
 
-        for (const item of podcastItems) {
-          const vid = (item.guid || item.link || '').replace(/^yt:video:/, '').split('v=').pop() || '';
-          if (vid) {
-            candidateVideos.push({
-              videoId: vid,
-              title: item.title || 'Daily Murli Malayalam Podcast',
-              subtitle: item.author || 'Supreme Light Creations',
-              description: item.description || '',
-              thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
-              url: item.link || `https://www.youtube.com/watch?v=${vid}`,
-              publishedAt: item.pubDate || new Date().toISOString(),
-              badge: 'PODCAST',
-              badgeColor: '#d97706',
-              channelTitle: item.author || 'Supreme Light Creations',
-            });
+          for (const item of podcastItems) {
+            const vid = item.snippet?.resourceId?.videoId || item.id?.videoId || '';
+            if (vid) {
+              candidateVideos.push({
+                videoId: vid,
+                title: item.snippet?.title || 'Daily Murli Malayalam Podcast',
+                subtitle: item.snippet?.channelTitle || 'Supreme Light Creations',
+                description: item.snippet?.description || '',
+                thumbnail:
+                  item.snippet?.thumbnails?.high?.url ||
+                  item.snippet?.thumbnails?.medium?.url ||
+                  item.snippet?.thumbnails?.standard?.url ||
+                  `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                url: `https://www.youtube.com/watch?v=${vid}`,
+                publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
+                badge: 'PODCAST',
+                badgeColor: '#d97706',
+                channelTitle: item.snippet?.channelTitle || 'Supreme Light Creations',
+              });
+            }
           }
         }
       }
+    } catch (err) {
+      console.warn('[YouTube Engine] Dedicated Podcast playlistItems API error:', err);
     }
-  } catch (err) {
-    console.warn('[YouTube Engine] Dedicated Podcast RSS converter error:', err);
   }
 
-  // 2. Secondary: Direct YouTube RSS XML fetch & parser (Native iOS / Android without CORS)
+  // 2. Secondary: YouTube Channel RSS Feed via rss2json converter
+  if (candidateVideos.length === 0) {
+    try {
+      const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+      const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}${cacheBustParam}`;
+      const rRes = await fetch(rssEndpoint, {
+        cache: 'no-store',
+        headers: noCacheHeaders,
+        signal: createTimeoutSignal(5000),
+      }).catch(() => null);
+
+      if (rRes && rRes.ok) {
+        const rData = await rRes.json().catch(() => null);
+        if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
+          const podcastItems = rData.items.filter((item: any) =>
+            isPodcastEpisode(item.title, item.description)
+          );
+
+          for (const item of podcastItems) {
+            const vid = (item.guid || item.link || '').replace(/^yt:video:/, '').split('v=').pop() || '';
+            if (vid) {
+              candidateVideos.push({
+                videoId: vid,
+                title: item.title || 'Daily Murli Malayalam Podcast',
+                subtitle: item.author || 'Supreme Light Creations',
+                description: item.description || '',
+                thumbnail: item.thumbnail || `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                url: item.link || `https://www.youtube.com/watch?v=${vid}`,
+                publishedAt: item.pubDate || new Date().toISOString(),
+                badge: 'PODCAST',
+                badgeColor: '#d97706',
+                channelTitle: item.author || 'Supreme Light Creations',
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[YouTube Engine] Dedicated Podcast RSS converter error:', err);
+    }
+  }
+
+  // 3. Tertiary: Direct YouTube RSS XML fetch & parser (Native iOS / Android without CORS)
   if (candidateVideos.length === 0) {
     try {
       const directRssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}${cacheBustParam}`;
       const directRes = await fetch(directRssUrl, {
         cache: 'no-store',
         headers: noCacheHeaders,
-        signal: AbortSignal.timeout(5000),
+        signal: createTimeoutSignal(5000),
       }).catch(() => null);
 
       if (directRes && directRes.ok) {
@@ -185,19 +262,18 @@ export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<Y
     }
   }
 
-  // 3. Tertiary: YouTube Data API v3 search endpoint with date ordering & cache-busting
-  const apiKey = getApiKey();
+  // 4. Quaternary: YouTube Data API v3 search endpoint with date ordering & cache-busting
   if (apiKey && candidateVideos.length === 0) {
     try {
       const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=25&key=${apiKey}${cacheBustParam}`;
       const sRes = await fetch(searchUrl, {
         cache: 'no-store',
         headers: noCacheHeaders,
-        signal: AbortSignal.timeout(5000),
+        signal: createTimeoutSignal(5000),
       }).catch(() => null);
 
       if (sRes && sRes.ok) {
-        const sData = await sRes.json();
+        const sData = await sRes.json().catch(() => null);
         if (sData && Array.isArray(sData.items) && sData.items.length > 0) {
           const podcastItems = sData.items.filter((item: any) =>
             isPodcastEpisode(item.snippet?.title, item.snippet?.description)
@@ -225,7 +301,7 @@ export async function fetchDedicatedPodcastVideo(bypassCache = false): Promise<Y
         }
       }
     } catch (err) {
-      console.warn('[YouTube Engine] Dedicated Podcast API error:', err);
+      console.warn('[YouTube Engine] Dedicated Podcast API search error:', err);
     }
   }
 
@@ -479,17 +555,66 @@ export async function fetchChannelVideoList(
 
   const apiKey = getApiKey();
 
-  // 2. Try YouTube Data API v3 (Handle 403 / 429 quota gracefully)
+  // 2. Primary: YouTube Data API v3 playlistItems (1 quota unit, guaranteed chronological, instant)
+  if (apiKey) {
+    try {
+      const uploadsPlaylistId = channelId.startsWith('UC') ? 'UU' + channelId.slice(2) : channelId;
+      const playlistUrl = `${BASE_URL}/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=15&key=${apiKey}${cacheBustParam}`;
+      const res = await fetch(playlistUrl, {
+        headers: noCacheHeaders,
+        signal: createTimeoutSignal(4000),
+      }).catch(() => null);
+
+      if (res && res.ok) {
+        const pData = await res.json().catch(() => null);
+        if (pData && Array.isArray(pData.items) && pData.items.length > 0) {
+          const videos: YouTubeVideo[] = pData.items
+            .map((item: any) => {
+              const vid = item.snippet?.resourceId?.videoId || item.id?.videoId || '';
+              if (!vid) return null;
+              return {
+                videoId: vid,
+                title: item.snippet?.title || 'Spiritual Video',
+                subtitle: item.snippet?.channelTitle || 'Brahma Kumaris',
+                description: item.snippet?.description || '',
+                thumbnail:
+                  item.snippet?.thumbnails?.high?.url ||
+                  item.snippet?.thumbnails?.medium?.url ||
+                  item.snippet?.thumbnails?.standard?.url ||
+                  `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                url: `https://www.youtube.com/watch?v=${vid}`,
+                publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
+                badge,
+                badgeColor,
+                channelTitle: item.snippet?.channelTitle,
+              };
+            })
+            .filter(Boolean) as YouTubeVideo[];
+
+          if (videos.length > 0) {
+            saveToCache(cacheKey, videos);
+            saveToCache(`yt_channel_v3_${channelId}`, videos[0]);
+            console.log(`[YouTube Engine] Successfully fetched ${videos.length} videos via playlistItems for ${channelId}`);
+            return videos;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[YouTube Engine] playlistItems error for ${channelId}:`, err);
+    }
+  }
+
+  // 3. Secondary: YouTube Data API v3 search endpoint fallback
   if (apiKey) {
     try {
       const searchUrl = `${BASE_URL}/search?part=snippet&channelId=${channelId}&order=date&type=video&maxResults=15&key=${apiKey}${cacheBustParam}`;
       const res = await fetch(searchUrl, {
         headers: noCacheHeaders,
-        signal: AbortSignal.timeout(4000),
+        signal: createTimeoutSignal(4000),
       }).catch(() => null);
 
       if (res && res.ok) {
-        const sData = await res.json();
+        const sData = await res.json().catch(() => null);
         if (sData && Array.isArray(sData.items) && sData.items.length > 0) {
           const videos: YouTubeVideo[] = sData.items
             .map((item: any) => {
@@ -516,7 +641,7 @@ export async function fetchChannelVideoList(
           if (videos.length > 0) {
             saveToCache(cacheKey, videos);
             saveToCache(`yt_channel_v3_${channelId}`, videos[0]);
-            console.log(`[YouTube Engine] Successfully fetched ${videos.length} videos via API v3 for ${channelId}`);
+            console.log(`[YouTube Engine] Successfully fetched ${videos.length} videos via search API for ${channelId}`);
             return videos;
           }
         }
@@ -524,21 +649,21 @@ export async function fetchChannelVideoList(
         console.warn(`[YouTube Engine] YouTube API quota exceeded (status ${res.status}) for ${channelId}. Instantly falling back to RSS feed.`);
       }
     } catch (err) {
-      console.warn(`[YouTube Engine] YouTube API error for ${channelId}:`, err);
+      console.warn(`[YouTube Engine] YouTube search API error for ${channelId}:`, err);
     }
   }
 
-  // 3. Fallback: YouTube Channel RSS Feed via rss2json converter with cache-busting
+  // 4. Tertiary: YouTube Channel RSS Feed via rss2json converter with cache-busting
   try {
     const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     const rssEndpoint = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}${cacheBustParam}`;
     const rRes = await fetch(rssEndpoint, {
       headers: noCacheHeaders,
-      signal: AbortSignal.timeout(5000),
+      signal: createTimeoutSignal(5000),
     }).catch(() => null);
 
     if (rRes && rRes.ok) {
-      const rData = await rRes.json();
+      const rData = await rRes.json().catch(() => null);
       if (rData && rData.status === 'ok' && Array.isArray(rData.items) && rData.items.length > 0) {
         const videos: YouTubeVideo[] = rData.items
           .map((item: any) => {
@@ -571,12 +696,12 @@ export async function fetchChannelVideoList(
     console.warn(`[YouTube Engine] RSS converter error for ${channelId}:`, err);
   }
 
-  // 4. Fallback: Direct YouTube RSS XML fetch & parser (Native iOS / Android without CORS)
+  // 5. Quaternary: Direct YouTube RSS XML fetch & parser (Native iOS / Android without CORS)
   try {
     const directRssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}${cacheBustParam}`;
     const directRes = await fetch(directRssUrl, {
       headers: noCacheHeaders,
-      signal: AbortSignal.timeout(5000),
+      signal: createTimeoutSignal(5000),
     }).catch(() => null);
 
     if (directRes && directRes.ok) {
@@ -593,14 +718,14 @@ export async function fetchChannelVideoList(
     console.warn(`[YouTube Engine] Direct XML RSS error for ${channelId}:`, err);
   }
 
-  // 5. Silent Local Storage Fallback: Return any cached videos
+  // 6. Quinary: Silent Local Storage Fallback: Return any cached videos
   const cachedStale = getFromCache<YouTubeVideo[]>(cacheKey);
   if (cachedStale && Array.isArray(cachedStale) && cachedStale.length > 0) {
     console.log(`[YouTube Engine] Serving ${cachedStale.length} videos from local storage for ${channelId}`);
     return cachedStale;
   }
 
-  // 6. Curated Fallback (for BK Sheeja)
+  // 7. Senary: Curated Fallback (for BK Sheeja)
   if (channelId === 'UCvQFuOM38iAZD7ltMujOq-g') {
     console.log('[YouTube Engine] Serving curated fallback videos for BK Sheeja');
     return DEFAULT_BK_SHEEJA_VIDEOS;
@@ -625,46 +750,116 @@ export async function fetchChannelLatestVideo(
   badgeColor: string,
   bypassCache = false
 ): Promise<YouTubeVideo | null> {
-  // If querying podcast channel, use dedicated filtered podcast method
-  if (channelId === 'UC98sbhynzcgLlx9x-SYi6zg' || badge === 'PODCAST') {
-    return fetchDedicatedPodcastVideo(bypassCache);
-  }
+  try {
+    // If querying podcast channel, use dedicated filtered podcast method
+    if (channelId === 'UC98sbhynzcgLlx9x-SYi6zg' || badge === 'PODCAST') {
+      return await fetchDedicatedPodcastVideo(bypassCache);
+    }
 
-  const list = await fetchChannelVideoList(channelId, badge, badgeColor, bypassCache);
-  if (list && list.length > 0) {
-    return list[0];
-  }
+    const list = await fetchChannelVideoList(channelId, badge, badgeColor, bypassCache);
+    if (list && list.length > 0) {
+      return list[0];
+    }
 
-  return getFromCache<YouTubeVideo>(`yt_channel_v3_${channelId}`) || null;
+    return getFromCache<YouTubeVideo>(`yt_channel_v3_${channelId}`) || null;
+  } catch (err) {
+    console.error(`[YouTube Engine] Error fetching channel ${channelId}:`, err);
+    return getFromCache<YouTubeVideo>(`yt_channel_v3_${channelId}`) || null;
+  }
 }
+
+export type ChannelSyncKey = 'liveVideo' | 'podcastVideo' | 'sheebaVideo' | 'sheejaVideo';
 
 /**
  * Synchronizes all 4 channels concurrently with dedicated podcast filtering.
+ * Each channel fetch is completely isolated: if one channel fails or takes time,
+ * the remaining three channels still complete and render immediately.
  */
-export async function syncAllYouTubeMedia(bypassCache = true): Promise<{
+export async function syncAllYouTubeMedia(
+  bypassCache = false,
+  onChannelLoaded?: (channelKey: ChannelSyncKey, video: YouTubeVideo) => void
+): Promise<{
   liveVideo: YouTubeVideo | null;
   podcastVideo: YouTubeVideo | null;
   sheebaVideo: YouTubeVideo | null;
   sheejaVideo: YouTubeVideo | null;
 }> {
-  if (bypassCache) {
-    clearYouTubeCache();
-  }
+  console.log(`[YouTube Engine] Starting independent uploads sync for all 4 channels (bypassCache: ${bypassCache})...`);
 
-  console.log(`[YouTube Engine] Starting direct uploads sync for all 4 channels (bypassCache: ${bypassCache})...`);
-  const [liveVideo, podcastVideo, sheebaVideo, sheejaVideo] = await Promise.all([
-    fetchChannelLatestVideo('UCTrf0g3Dpi5lW-jddmPlOpA', 'LIVE CLASS', '#dc2626', bypassCache),
-    fetchDedicatedPodcastVideo(bypassCache),
-    fetchChannelLatestVideo('UCtj3aB4eYUzi2GssD-g9aBA', 'CLASSES', '#c13584', bypassCache),
-    fetchChannelLatestVideo('UCvQFuOM38iAZD7ltMujOq-g', 'MEDITATION', '#7c3aed', bypassCache),
+  // 1. BK S Calicut Live / Daily Murli Class
+  const fetchLive = async (): Promise<YouTubeVideo | null> => {
+    try {
+      const v = await fetchChannelLatestVideo('UCTrf0g3Dpi5lW-jddmPlOpA', 'LIVE CLASS', '#dc2626', bypassCache);
+      if (v && onChannelLoaded) {
+        onChannelLoaded('liveVideo', v);
+      }
+      return v;
+    } catch (e) {
+      console.error('[YouTube Engine] BK S Calicut Live fetch isolated error:', e);
+      return null;
+    }
+  };
+
+  // 2. Supreme Light Creations Dedicated Daily Podcast
+  const fetchPodcast = async (): Promise<YouTubeVideo | null> => {
+    try {
+      const v = await fetchDedicatedPodcastVideo(bypassCache);
+      if (v && onChannelLoaded) {
+        onChannelLoaded('podcastVideo', v);
+      }
+      return v;
+    } catch (e) {
+      console.error('[YouTube Engine] Supreme Light Podcast fetch isolated error:', e);
+      return null;
+    }
+  };
+
+  // 3. BK Sheeba Classes & Chintan
+  const fetchSheeba = async (): Promise<YouTubeVideo | null> => {
+    try {
+      const v = await fetchChannelLatestVideo('UCtj3aB4eYUzi2GssD-g9aBA', 'CLASSES', '#c13584', bypassCache);
+      if (v && onChannelLoaded) {
+        onChannelLoaded('sheebaVideo', v);
+      }
+      return v;
+    } catch (e) {
+      console.error('[YouTube Engine] BK Sheeba fetch isolated error:', e);
+      return null;
+    }
+  };
+
+  // 4. BK Sheeja Meditation & Songs
+  const fetchSheeja = async (): Promise<YouTubeVideo | null> => {
+    try {
+      const v = await fetchChannelLatestVideo('UCvQFuOM38iAZD7ltMujOq-g', 'MEDITATION', '#7c3aed', bypassCache);
+      if (v && onChannelLoaded) {
+        onChannelLoaded('sheejaVideo', v);
+      }
+      return v;
+    } catch (e) {
+      console.error('[YouTube Engine] BK Sheeja fetch isolated error:', e);
+      return null;
+    }
+  };
+
+  // Run all 4 fetches concurrently with Promise.allSettled
+  const [liveRes, podRes, sheebaRes, sheejaRes] = await Promise.allSettled([
+    fetchLive(),
+    fetchPodcast(),
+    fetchSheeba(),
+    fetchSheeja(),
   ]);
 
-  console.log('[Supreme Light Creations] Latest Published Dedicated Podcast:', podcastVideo?.title || 'None');
-  console.log('[YouTube Engine] Completed media fetch:', {
-    live: liveVideo?.title,
-    podcast: podcastVideo?.title,
-    sheeba: sheebaVideo?.title,
-    sheeja: sheejaVideo?.title,
+  const liveVideo: YouTubeVideo | null = liveRes.status === 'fulfilled' ? liveRes.value : null;
+  const podcastVideo: YouTubeVideo | null = podRes.status === 'fulfilled' ? podRes.value : null;
+  const sheebaVideo: YouTubeVideo | null = sheebaRes.status === 'fulfilled' ? sheebaRes.value : null;
+  const sheejaVideo: YouTubeVideo | null = sheejaRes.status === 'fulfilled' ? sheejaRes.value : null;
+
+  console.log('[YouTube Engine] Completed media fetch for all 4 channels:', {
+    live: liveVideo?.title || 'None',
+    podcast: podcastVideo?.title || 'None',
+    sheeba: sheebaVideo?.title || 'None',
+    sheeja: sheejaVideo?.title || 'None',
   });
 
   return {

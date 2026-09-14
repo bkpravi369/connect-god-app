@@ -328,21 +328,13 @@ export async function initNotificationService(): Promise<void> {
 // Serialize rapid switch changes so an older schedule cannot overwrite the latest settings.
 let scheduleQueue: Promise<void> = Promise.resolve();
 export function rescheduleAllTrafficAlarms(): Promise<void> {
-  scheduleQueue = scheduleQueue
-    .catch((err) => {
-      console.error('[NotificationService] Previous alarm schedule error:', err);
-    })
-    .then(async () => {
-      try {
-        await rescheduleTrafficAlarmsNow();
-      } catch (e) {
-        console.error('[NotificationService] Isolated reschedule error:', e);
-      }
-    })
-    .catch((fatal) => {
-      console.error('[NotificationService] Fatal reschedule queue error:', fatal);
-    });
-  return scheduleQueue;
+  const next = scheduleQueue
+    .catch(() => {})
+    .then(() => rescheduleTrafficAlarmsNow());
+  scheduleQueue = next.catch((err) => {
+    console.error('[NotificationService] Previous alarm schedule error:', err);
+  });
+  return next;
 }
 
 async function rescheduleTrafficAlarmsNow(): Promise<void> {
@@ -381,6 +373,7 @@ async function rescheduleTrafficAlarmsNow(): Promise<void> {
         await TrafficControlNative.scheduleAlarms({ slots: JSON.stringify(slots) });
       } catch (androidErr) {
         console.error('[NotificationService] Android alarm schedule error:', androidErr);
+        throw androidErr;
       }
       return;
     }

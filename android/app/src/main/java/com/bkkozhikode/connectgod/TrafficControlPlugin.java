@@ -14,6 +14,8 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+import org.json.JSONObject;
+
 @CapacitorPlugin(name = "TrafficControlNative")
 public class TrafficControlPlugin extends Plugin {
     private static final String TAG = "TrafficControlPlugin";
@@ -22,7 +24,9 @@ public class TrafficControlPlugin extends Plugin {
     public void getAlarmStatus(PluginCall call) {
         JSObject result = new JSObject();
         result.put("exactAlarmsAllowed", TrafficControlScheduler.canSchedule(getContext()));
-        result.put("version", 2);
+        result.put("version", 3);
+        String lastError = TrafficControlDiagnostics.getLastScheduleError(getContext());
+        result.put("lastScheduleError", lastError != null ? lastError : "");
         call.resolve(result);
     }
 
@@ -61,6 +65,31 @@ public class TrafficControlPlugin extends Plugin {
         } catch (Exception e) {
             Log.e(TAG, "Error in cancelAllAlarms: " + e.getMessage(), e);
             call.reject("Failed to cancel native alarms: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getDiagnostics(PluginCall call) {
+        try {
+            JSONObject diag = TrafficControlDiagnostics.getDiagnosticsJson(getContext());
+            JSObject ret = JSObject.fromJSONObject(diag);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Error in getDiagnostics: " + e.getMessage(), e);
+            call.reject("Failed to get diagnostics: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void exportDiagnostics(PluginCall call) {
+        try {
+            String report = TrafficControlDiagnostics.getFormattedReport(getContext());
+            JSObject ret = new JSObject();
+            ret.put("report", report);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Error in exportDiagnostics: " + e.getMessage(), e);
+            call.reject("Failed to export diagnostics: " + e.getMessage());
         }
     }
 

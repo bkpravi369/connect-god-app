@@ -1,5 +1,14 @@
-import { AppState } from 'react-native';
-import { TrafficControlNative, getTrafficAlarmStatus, isAndroidTrafficApp, TRAFFIC_PRESET_STORAGE_KEY } from '@/services/trafficNativePlugin';
+import { AppState, Share } from 'react-native';
+import {
+  TrafficControlNative,
+  getTrafficAlarmDetailedStatus,
+  getTrafficDiagnostics,
+  exportTrafficDiagnosticsReport,
+  isAndroidTrafficApp,
+  TRAFFIC_PRESET_STORAGE_KEY,
+  TrafficDiagnosticsData,
+  AlarmStatusResult,
+} from '@/services/trafficNativePlugin';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -23,6 +32,13 @@ import {
   Play,
   Square,
   Repeat,
+  Activity,
+  AlertTriangle,
+  Share2,
+  Copy,
+  RefreshCw,
+  CheckCircle2,
+  ShieldAlert,
 } from 'lucide-react-native';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import {
@@ -74,26 +90,97 @@ const DEFAULT_CUSTOM_ALARMS: CustomAlarm[] = [];
 export default function TrafficControlScreen() {
   const toast = useToast();
   const [alarmStatus, setAlarmStatus] = useState('Checking alarm setup…');
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [detailedStatus, setDetailedStatus] = useState<AlarmStatusResult | null>(null);
+
+  const [diagnosticsVisible, setDiagnosticsVisible] = useState(false);
+  const [diagnosticsData, setDiagnosticsData] = useState<TrafficDiagnosticsData | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [reportText, setReportText] = useState('');
+
   const refreshAlarmStatus = () => {
     try {
-      getTrafficAlarmStatus()
-        .then((s) => setAlarmStatus(s))
+      getTrafficAlarmDetailedStatus()
+        .then((res) => {
+          setDetailedStatus(res);
+          setAlarmStatus(res.message);
+          if (res.scheduleError) {
+            setScheduleError(res.scheduleError);
+          }
+        })
         .catch((e) => console.error('[TrafficControlScreen] refreshAlarmStatus error:', e));
     } catch (e) {
       console.error('[TrafficControlScreen] refreshAlarmStatus sync error:', e);
     }
   };
+
   const syncAlarms = () => {
+    setScheduleError(null);
     try {
       rescheduleAllTrafficAlarms()
-        .then(refreshAlarmStatus)
-        .catch((e) => {
-          console.error('[TrafficControlScreen] syncAlarms error:', e);
+        .then(() => {
+          setScheduleError(null);
           refreshAlarmStatus();
-          toast.show('Alarm setup needs attention. Check the alarm permission above.', 'info');
+        })
+        .catch((e: any) => {
+          console.error('[TrafficControlScreen] syncAlarms error:', e);
+          const errMsg = e?.message || String(e);
+          setScheduleError(errMsg);
+          refreshAlarmStatus();
+          toast.show('Alarm scheduling issue: ' + errMsg, 'info');
         });
-    } catch (e) {
+    } catch (e: any) {
       console.error('[TrafficControlScreen] syncAlarms sync error:', e);
+      setScheduleError(e?.message || String(e));
+    }
+  };
+
+  const handleOpenDiagnostics = async () => {
+    setDiagnosticsVisible(true);
+    setDiagnosticsLoading(true);
+    try {
+      const data = await getTrafficDiagnostics();
+      setDiagnosticsData(data);
+      const rep = await exportTrafficDiagnosticsReport();
+      setReportText(rep);
+    } catch (err) {
+      console.error('Error loading diagnostics', err);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
+  const handleShareReport = async () => {
+    try {
+      let report = reportText;
+      if (!report) {
+        report = await exportTrafficDiagnosticsReport();
+        setReportText(report);
+      }
+      await Share.share({
+        message: report,
+        title: 'Connect GOD Traffic Control Diagnostics',
+      });
+    } catch (err) {
+      console.error('Error sharing report', err);
+    }
+  };
+
+  const handleCopyReport = async () => {
+    try {
+      let report = reportText;
+      if (!report) {
+        report = await exportTrafficDiagnosticsReport();
+        setReportText(report);
+      }
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(report);
+        toast.show('Diagnostics report copied to clipboard!', 'success');
+      } else {
+        toast.show('Report ready - copy from report text below', 'info');
+      }
+    } catch {
+      toast.show('Unable to copy automatically - use Share button', 'info');
     }
   };
   useEffect(() => {
@@ -219,17 +306,48 @@ export default function TrafficControlScreen() {
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        {isAndroidTrafficApp() && (
-          <View style={{ padding: 16, backgroundColor: '#fff7ed', borderRadius: 12, marginBottom: 16 }}>
-            <Text style={{ color: '#7c2d12', marginBottom: 8 }}>{alarmStatus}</Text>
-            <Pressable onPress={async () => {
-              try {
-                await TrafficControlNative.requestExactAlarmPermission();
-                await syncAlarms();
-              } catch { await refreshAlarmStatus(); }
-            }}>
-              <Text style={{ color: '#991b1b', fontWeight: '700' }}>Set up alarm permission</Text>
+        {isAndroidTrafficApp() && scheduleError && (
+          <View style={styles.errorAlertBanner}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <AlertTriangle color="#dc2626" size={18} strokeWidth={2.2} />
+              <Text style={styles.errorAlertTitle}>Alarm Scheduling Issue</Text>
+            </View>
+            <Text style={styles.errorAlertText}>{scheduleError}</Text>
+            <Pressable
+              style={({ pressed }) => [styles.errorRetryBtn, pressed && styles.btnPressed]}
+              onPress={() => syncAlarms()}
+            >
+              <Repeat color="#991b1b" size={14} strokeWidth={2.2} />
+              <Text style={styles.errorRetryText}>Retry Scheduling (വീണ്ടും ശ്രമിക്കുക)</Text>
             </Pressable>
+          </View>
+        )}
+
+        {isAndroidTrafficApp() && (
+          <View style={styles.permissionCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8, gap: 8 }}>
+              <Text style={styles.permissionText}>{alarmStatus}</Text>
+              <Pressable
+                style={({ pressed }) => [styles.diagnosticsPillBtn, pressed && styles.btnPressed]}
+                onPress={handleOpenDiagnostics}
+              >
+                <Activity color="#991b1b" size={14} strokeWidth={2.2} />
+                <Text style={styles.diagnosticsPillText}>Diagnostics</Text>
+              </Pressable>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+              <Pressable onPress={async () => {
+                try {
+                  await TrafficControlNative.requestExactAlarmPermission();
+                  await syncAlarms();
+                } catch { await refreshAlarmStatus(); }
+              }}>
+                <Text style={styles.permissionLink}>Set up alarm permission</Text>
+              </Pressable>
+              <Pressable onPress={handleOpenDiagnostics}>
+                <Text style={[styles.permissionLink, { color: COLORS.neutral[700] }]}>View Status & Logs</Text>
+              </Pressable>
+            </View>
           </View>
         )}
         {/* Header Card */}
@@ -387,6 +505,17 @@ export default function TrafficControlScreen() {
           addCustomAlarm(time, label, state);
           setAddOpen(false);
         }}
+      />
+
+      <DiagnosticsModal
+        visible={diagnosticsVisible}
+        onClose={() => setDiagnosticsVisible(false)}
+        data={diagnosticsData}
+        loading={diagnosticsLoading}
+        reportText={reportText}
+        onRefresh={handleOpenDiagnostics}
+        onShare={handleShareReport}
+        onCopy={handleCopyReport}
       />
     </View>
   );
@@ -790,6 +919,185 @@ function AddAlarmModal({
   );
 }
 
+function DiagnosticsModal({
+  visible,
+  onClose,
+  data,
+  loading,
+  reportText,
+  onRefresh,
+  onShare,
+  onCopy,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  data: TrafficDiagnosticsData | null;
+  loading: boolean;
+  reportText: string;
+  onRefresh: () => void;
+  onShare: () => void;
+  onCopy: () => void;
+}) {
+  const getStatusBadge = (status?: string) => {
+    switch (status) {
+      case 'COMPLETED':
+        return { bg: '#dcfce7', text: '#15803d', label: 'COMPLETED' };
+      case 'PLAYING':
+        return { bg: '#dbeafe', text: '#1d4ed8', label: 'PLAYING' };
+      case 'SCHEDULED':
+        return { bg: '#f3e8ff', text: '#6d28d9', label: 'SCHEDULED' };
+      case 'PAUSED_FOR_FOCUS':
+        return { bg: '#fef3c7', text: '#b45309', label: 'PAUSED (FOCUS)' };
+      case 'RETRYING':
+        return { bg: '#ffedd5', text: '#c2410c', label: 'RETRYING' };
+      case 'FAILED':
+        return { bg: '#fee2e2', text: '#b91c1c', label: 'FAILED' };
+      case 'MISSED_STALE':
+        return { bg: '#f1f5f9', text: '#475569', label: 'MISSED (STALE)' };
+      default:
+        return { bg: '#f3f4f6', text: '#6b7280', label: status || 'PENDING' };
+    }
+  };
+
+  const dev = data?.device;
+  const slots = data?.slots || [];
+  const events = data?.events || [];
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.diagModalOverlay}>
+        <View style={styles.diagModalSheet}>
+          <View style={styles.diagModalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.diagModalTitle}>Traffic Control Diagnostics</Text>
+              <Text style={styles.diagModalSub}>Native Android Alarm & Playback Audit</Text>
+            </View>
+            <Pressable style={styles.modalClose} onPress={onClose}>
+              <X color={COLORS.neutral[500]} size={18} strokeWidth={2.4} />
+            </Pressable>
+          </View>
+
+          {/* Action Bar */}
+          <View style={styles.diagActionBar}>
+            <Pressable
+              style={({ pressed }) => [styles.diagActionBtn, styles.diagActionCopy, pressed && styles.btnPressed]}
+              onPress={onCopy}
+            >
+              <Copy color="#ffffff" size={14} strokeWidth={2.2} />
+              <Text style={styles.diagActionTextWhite}>Copy Report</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.diagActionBtn, styles.diagActionShare, pressed && styles.btnPressed]}
+              onPress={onShare}
+            >
+              <Share2 color="#ffffff" size={14} strokeWidth={2.2} />
+              <Text style={styles.diagActionTextWhite}>Share Report</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.diagActionBtn, styles.diagActionRefresh, pressed && styles.btnPressed]}
+              onPress={onRefresh}
+            >
+              <RefreshCw color={COLORS.neutral[700]} size={14} strokeWidth={2.2} />
+              <Text style={styles.diagActionTextDark}>Refresh</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView style={styles.diagScroll} showsVerticalScrollIndicator={false}>
+            {/* Device Status Card */}
+            {dev && (
+              <View style={styles.diagDeviceCard}>
+                <Text style={styles.diagSectionHeader}>DEVICE & PERMISSION HEALTH</Text>
+                <View style={styles.diagGrid}>
+                  <View style={styles.diagGridItem}>
+                    <Text style={styles.diagGridLabel}>Exact Alarms:</Text>
+                    <Text style={[styles.diagGridVal, { color: dev.exactAlarmsAllowed ? '#15803d' : '#b91c1c' }]}>
+                      {dev.exactAlarmsAllowed ? '✓ ALLOWED' : '✗ RESTRICTED'}
+                    </Text>
+                  </View>
+                  <View style={styles.diagGridItem}>
+                    <Text style={styles.diagGridLabel}>Battery Optimization:</Text>
+                    <Text style={[styles.diagGridVal, { color: dev.batteryOptimizationIgnored ? '#15803d' : '#b45309' }]}>
+                      {dev.batteryOptimizationIgnored ? '✓ EXEMPTED' : '⚠ RESTRICTED'}
+                    </Text>
+                  </View>
+                  <View style={styles.diagGridItem}>
+                    <Text style={styles.diagGridLabel}>Android Device:</Text>
+                    <Text style={styles.diagGridVal}>{dev.manufacturer} {dev.model} (API {dev.sdkInt})</Text>
+                  </View>
+                  {dev.lastScheduleError && dev.lastScheduleError !== 'null' && (
+                    <View style={[styles.diagGridItem, { width: '100%' }]}>
+                      <Text style={[styles.diagGridLabel, { color: '#b91c1c' }]}>Last Schedule Error:</Text>
+                      <Text style={[styles.diagGridVal, { color: '#b91c1c' }]}>{dev.lastScheduleError}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Slots Card */}
+            <View style={styles.diagSlotsCard}>
+              <Text style={styles.diagSectionHeader}>ACTIVE SLOTS AUDIT ({slots.length})</Text>
+              {slots.length === 0 ? (
+                <Text style={styles.diagEmptyText}>No active slots configured.</Text>
+              ) : (
+                slots.map((slot) => {
+                  const badge = getStatusBadge(slot.lastStatus);
+                  return (
+                    <View key={slot.id} style={styles.diagSlotItem}>
+                      <View style={styles.diagSlotTop}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.diagSlotTitle}>
+                            [{slot.time}] {slot.title}
+                          </Text>
+                          <Text style={styles.diagSlotSub}>ID: {slot.id} • Track: {slot.slotKey}</Text>
+                        </View>
+                        <View style={[styles.diagBadge, { backgroundColor: badge.bg }]}>
+                          <Text style={[styles.diagBadgeText, { color: badge.text }]}>{badge.label}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.diagSlotMeta}>
+                        <Text style={styles.diagMetaText}>Next: {slot.nextScheduledFormatted || 'Not armed'}</Text>
+                        <Text style={styles.diagMetaText}>Received: {slot.lastReceivedFormatted || 'Never'}</Text>
+                        <Text style={styles.diagMetaText}>Started: {slot.lastPlaybackStartedFormatted || 'Never'}</Text>
+                        <Text style={styles.diagMetaText}>Completed: {slot.lastCompletedFormatted || 'Never'}</Text>
+                        {slot.lastError ? (
+                          <Text style={[styles.diagMetaText, { color: '#b91c1c' }]}>
+                            Issue: {slot.lastError}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+
+            {/* Event Log */}
+            <View style={styles.diagEventsCard}>
+              <Text style={styles.diagSectionHeader}>RECENT AUDIT EVENTS (Last {events.length})</Text>
+              {events.length === 0 ? (
+                <Text style={styles.diagEmptyText}>No events recorded yet.</Text>
+              ) : (
+                events.slice(-15).reverse().map((ev, idx) => (
+                  <View key={idx} style={styles.diagEventItem}>
+                    <Text style={styles.diagEventTime}>{ev.timeFormatted}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.diagEventTitle}>[{ev.event}] {ev.slotId}</Text>
+                      {ev.details ? <Text style={styles.diagEventDetails}>{ev.details}</Text> : null}
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.neutral[50] },
   content: { padding: SPACING.lg, paddingBottom: BOTTOM_NAV_PADDING },
@@ -1054,6 +1362,164 @@ const styles = StyleSheet.create({
   modalAddBtnPressed: { backgroundColor: COLORS.primary[700] },
   modalAddBtnDisabled: { opacity: 0.5 },
   modalAddBtnText: { fontFamily: FONTS.sansBold, fontSize: 15, color: COLORS.neutral[0] },
+
+  // Error Alert Banner
+  errorAlertBanner: {
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  errorAlertTitle: { fontFamily: FONTS.sansBold, fontSize: 14, color: '#b91c1c' },
+  errorAlertText: { fontFamily: FONTS.sansMedium, fontSize: 13, color: '#991b1b', marginBottom: SPACING.sm },
+  errorRetryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#fee2e2',
+    borderRadius: RADIUS.md,
+  },
+  errorRetryText: { fontFamily: FONTS.sansBold, fontSize: 12, color: '#991b1b' },
+
+  // Permission & Diagnostics Pill
+  permissionCard: {
+    backgroundColor: '#fff7ed',
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: '#ffedd5',
+  },
+  permissionText: { fontFamily: FONTS.sansMedium, fontSize: 13, color: '#7c2d12', flex: 1 },
+  permissionLink: { fontFamily: FONTS.sansBold, fontSize: 13, color: '#991b1b' },
+  diagnosticsPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#fed7aa',
+    borderRadius: RADIUS.full,
+  },
+  diagnosticsPillText: { fontFamily: FONTS.sansBold, fontSize: 11, color: '#9a3412' },
+
+  // Diagnostics Modal
+  diagModalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' },
+  diagModalSheet: {
+    backgroundColor: COLORS.neutral[0],
+    borderTopLeftRadius: RADIUS['2xl'],
+    borderTopRightRadius: RADIUS['2xl'],
+    padding: SPACING.xl,
+    paddingBottom: 24,
+    maxHeight: '90%',
+  },
+  diagModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.md,
+  },
+  diagModalTitle: { fontFamily: FONTS.sansBold, fontSize: 18, color: COLORS.neutral[900] },
+  diagModalSub: { fontFamily: FONTS.sansMedium, fontSize: 12, color: COLORS.neutral[500], marginTop: 2 },
+  diagActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  diagActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.md,
+  },
+  diagActionCopy: { backgroundColor: COLORS.primary[700] },
+  diagActionShare: { backgroundColor: '#0284c7' },
+  diagActionRefresh: { backgroundColor: COLORS.neutral[100] },
+  diagActionTextWhite: { fontFamily: FONTS.sansBold, fontSize: 12, color: '#ffffff' },
+  diagActionTextDark: { fontFamily: FONTS.sansBold, fontSize: 12, color: COLORS.neutral[800] },
+  diagScroll: { maxHeight: 520 },
+  diagDeviceCard: {
+    backgroundColor: COLORS.neutral[50],
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+  },
+  diagSectionHeader: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 11,
+    color: COLORS.neutral[500],
+    letterSpacing: 0.5,
+    marginBottom: SPACING.sm,
+  },
+  diagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: SPACING.sm },
+  diagGridItem: {
+    width: '48%',
+    backgroundColor: COLORS.neutral[0],
+    padding: 8,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[100],
+  },
+  diagGridLabel: { fontFamily: FONTS.sansMedium, fontSize: 11, color: COLORS.neutral[500] },
+  diagGridVal: { fontFamily: FONTS.sansBold, fontSize: 12, color: COLORS.neutral[900], marginTop: 2 },
+  diagSlotsCard: {
+    backgroundColor: COLORS.neutral[50],
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+  },
+  diagEmptyText: {
+    fontFamily: FONTS.sansMedium,
+    fontSize: 12,
+    color: COLORS.neutral[400],
+    fontStyle: 'italic',
+  },
+  diagSlotItem: {
+    backgroundColor: COLORS.neutral[0],
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    marginBottom: SPACING.xs,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[100],
+  },
+  diagSlotTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  diagSlotTitle: { fontFamily: FONTS.sansBold, fontSize: 13, color: COLORS.neutral[900] },
+  diagSlotSub: { fontFamily: FONTS.sans, fontSize: 11, color: COLORS.neutral[500] },
+  diagBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.sm },
+  diagBadgeText: { fontFamily: FONTS.sansBold, fontSize: 10 },
+  diagSlotMeta: { marginTop: 4, gap: 2 },
+  diagMetaText: { fontFamily: FONTS.sans, fontSize: 11, color: COLORS.neutral[600] },
+  diagEventsCard: {
+    backgroundColor: COLORS.neutral[50],
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+  },
+  diagEventItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.neutral[100],
+  },
+  diagEventTime: { fontFamily: FONTS.sansMedium, fontSize: 10, color: COLORS.neutral[400], width: 65 },
+  diagEventTitle: { fontFamily: FONTS.sansBold, fontSize: 11, color: COLORS.neutral[800] },
+  diagEventDetails: { fontFamily: FONTS.sans, fontSize: 11, color: COLORS.neutral[600] },
 });
 
 export { TrafficControlScreen };

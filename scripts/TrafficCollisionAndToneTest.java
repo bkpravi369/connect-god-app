@@ -1,168 +1,182 @@
-import java.util.Objects;
+import com.bkkozhikode.connectgod.TrafficPlaybackCoordinator;
+import com.bkkozhikode.connectgod.TrafficPlaybackSession;
 
 public class TrafficCollisionAndToneTest {
 
-    static class PlaybackSession {
-        final String occurrenceId;
-        final String slotId;
-        final String slotKey;
-        final String title;
-        final String toneType;
-        final String toneUri;
-        final long triggerTime;
-        final int priority;
-        final long sessionToken;
-        volatile boolean isCancelled = false;
-
-        PlaybackSession(
-            String occurrenceId,
-            String slotId,
-            String slotKey,
-            String title,
-            String toneType,
-            String toneUri,
-            long triggerTime,
-            int priority,
-            long sessionToken
-        ) {
-            this.occurrenceId = occurrenceId;
-            this.slotId = slotId;
-            this.slotKey = slotKey;
-            this.title = title;
-            this.toneType = toneType;
-            this.toneUri = toneUri;
-            this.triggerTime = triggerTime;
-            this.priority = priority;
-            this.sessionToken = sessionToken;
-        }
-    }
-
-    static class MockAudioService {
-        private static final long STALE_PLAYBACK_THRESHOLD_MS = 15 * 60 * 1000L;
-        private PlaybackSession currentSession = null;
-        private long nextSessionToken = 0;
-        private String lastAction = "";
-
-        int resolvePriority(String slotId, String slotKey) {
-            if ("hourly_chime".equals(slotKey) || (slotId != null && slotId.startsWith("hourly:"))) {
-                return 1;
-            }
-            return 2;
-        }
-
-        String resolveBundledToneResource(String toneType, String toneUri, String slotKey) {
-            if ("bundled".equalsIgnoreCase(toneType) && toneUri != null && !toneUri.isEmpty()) {
-                return "tc_" + toneUri;
-            }
-            if (slotKey != null && !slotKey.isEmpty()) {
-                return "tc_" + slotKey;
-            }
-            return "tc_hourly_chime";
-        }
-
-        boolean handleAlarmIntent(String slotId, String slotKey, String title, String toneType, String toneUri, long triggerTime, long now) {
-            String occurrenceId = slotId + ":" + triggerTime;
-            int priority = resolvePriority(slotId, slotKey);
-
-            // 1. Check duplicate of current session
-            if (currentSession != null && occurrenceId.equals(currentSession.occurrenceId)) {
-                lastAction = "DUPLICATE_IGNORED";
-                return false;
-            }
-
-            // 2. Collision policy with another active session
-            if (currentSession != null && !currentSession.isCancelled) {
-                if (currentSession.priority > priority) {
-                    lastAction = "DROPPED_LOWER_PRIORITY";
-                    return false;
-                } else {
-                    lastAction = "PREEMPTED_PREVIOUS";
-                    currentSession.isCancelled = true;
-                }
-            }
-
-            // 3. Expiration check
-            if (now - triggerTime > STALE_PLAYBACK_THRESHOLD_MS) {
-                lastAction = "EXPIRED_BEFORE_PLAYBACK";
-                return false;
-            }
-
-            // 4. Start new session
-            long token = ++nextSessionToken;
-            currentSession = new PlaybackSession(occurrenceId, slotId, slotKey, title, toneType, toneUri, triggerTime, priority, token);
-            lastAction = "STARTED_SESSION_" + token;
-            return true;
-        }
-
-        boolean handleCompletionCallback(long callbackSessionToken) {
-            if (currentSession != null && currentSession.sessionToken == callbackSessionToken && !currentSession.isCancelled) {
-                lastAction = "COMPLETED_SESSION_" + callbackSessionToken;
-                currentSession = null;
-                return true;
-            }
-            lastAction = "IGNORED_OBSOLETE_CALLBACK";
-            return false;
-        }
-    }
-
     public static void main(String[] args) {
-        MockAudioService service = new MockAudioService();
+        System.out.println("Running regression tests exercising PRODUCTION TrafficPlaybackCoordinator & TrafficPlaybackSession...");
+
+        TrafficPlaybackCoordinator coordinator = new TrafficPlaybackCoordinator();
         long t0 = 1726330000000L;
 
-        // Test 1: Hourly chime fires and starts session 1
-        boolean started1 = service.handleAlarmIntent("hourly:14:00", "hourly_chime", "Hourly Chime", "bundled", "", t0, t0 + 100);
-        assert started1 : "Session 1 should have started";
-        assert "STARTED_SESSION_1".equals(service.lastAction) : "Action should be STARTED_SESSION_1";
-        assert service.currentSession.sessionToken == 1 : "Session token should be 1";
+        // =========================================================================
+        // Test 1: Duplicate guard across ALL active states
+        // (PREPARING, PLAYING, PAUSED_FOR_FOCUS, RETRYING)
+        // =========================================================================
+        TrafficPlaybackSession.State[] activeStates = new TrafficPlaybackSession.State[] {
+            TrafficPlaybackSession.State.PREPARING,
+            TrafficPlaybackSession.State.PLAYING,
+            TrafficPlaybackSession.State.PAUSED_FOR_FOCUS,
+            TrafficPlaybackSession.State.RETRYING
+        };
 
-        // Test 2: Duplicate broadcast of same hourly chime occurrence
-        boolean startedDup = service.handleAlarmIntent("hourly:14:00", "hourly_chime", "Hourly Chime", "bundled", "", t0, t0 + 200);
-        assert !startedDup : "Duplicate should not start new session";
-        assert "DUPLICATE_IGNORED".equals(service.lastAction) : "Action should be DUPLICATE_IGNORED";
-        assert service.currentSession.sessionToken == 1 : "Active session should still be 1";
+        for (TrafficPlaybackSession.State state : activeStates) {
+            coordinator.clearSession(coordinator.getCurrentSession());
+            TrafficPlaybackCoordinator.StartResult res1 = coordinator.evaluateStart(
+                "preset:07:00", "morning", "Morning Study", "bundled", "", t0, t0 + 100
+            );
+            assert res1.decision == TrafficPlaybackCoordinator.StartDecision.PROCEED : "Failed to start in test for " + state;
+            TrafficPlaybackSession session = res1.newSession;
+            session.setState(state);
 
-        // Test 3: Preset alarm arrives while hourly chime is active -> Preset preempts chime
-        boolean startedPreset = service.handleAlarmIntent("preset:14:00", "noon", "12:00 PM Noon", "bundled", "", t0, t0 + 300);
-        assert startedPreset : "Preset should preempt hourly chime";
-        assert "STARTED_SESSION_2".equals(service.lastAction) : "Action should be STARTED_SESSION_2";
-        assert service.currentSession.sessionToken == 2 : "Active session should be 2";
-        assert service.currentSession.priority == 2 : "Active session priority should be 2";
+            // Now send duplicate occurrence intent for same occurrenceId (preset:07:00:t0)
+            TrafficPlaybackCoordinator.StartResult dupRes = coordinator.evaluateStart(
+                "preset:07:00", "morning", "Morning Study", "bundled", "", t0, t0 + 200
+            );
+            assert dupRes.decision == TrafficPlaybackCoordinator.StartDecision.IGNORED_DUPLICATE :
+                "Duplicate guard failed for state: " + state + ", got: " + dupRes.decision;
+            assert coordinator.getCurrentSession() == session : "Current session changed on duplicate for state: " + state;
+            assert !session.isCancelled() : "Active session should not be cancelled on duplicate for state: " + state;
+            System.out.println("  ✓ Duplicate guard passed for active state: " + state);
+        }
 
-        // Test 4: Obsolete completion callback from session 1 arrives late -> MUST be ignored!
-        boolean handledLateCallback = service.handleCompletionCallback(1);
-        assert !handledLateCallback : "Late callback from preempted session 1 must be ignored";
-        assert "IGNORED_OBSOLETE_CALLBACK".equals(service.lastAction) : "Obsolete callback must be ignored";
-        assert service.currentSession != null && service.currentSession.sessionToken == 2 : "Session 2 must remain active";
+        // =========================================================================
+        // Test 2: Priority guard across ALL active states
+        // An hourly chime (priority 1) must NOT replace an active preset/custom alarm (priority 2),
+        // including when PREPARING, PLAYING, PAUSED_FOR_FOCUS, or RETRYING!
+        // =========================================================================
+        for (TrafficPlaybackSession.State state : activeStates) {
+            coordinator.clearSession(coordinator.getCurrentSession());
+            TrafficPlaybackCoordinator.StartResult resPreset = coordinator.evaluateStart(
+                "preset:12:00", "noon", "Noon Remembrance", "bundled", "", t0, t0 + 100
+            );
+            assert resPreset.decision == TrafficPlaybackCoordinator.StartDecision.PROCEED;
+            TrafficPlaybackSession presetSession = resPreset.newSession;
+            presetSession.setState(state);
 
-        // Test 5: Lower-priority hourly chime arrives while Preset alarm is active -> MUST be dropped!
-        boolean startedLower = service.handleAlarmIntent("hourly:14:00", "hourly_chime", "Hourly Chime", "bundled", "", t0 + 400, t0 + 400);
-        assert !startedLower : "Lower priority hourly chime must be dropped";
-        assert "DROPPED_LOWER_PRIORITY".equals(service.lastAction) : "Action should be DROPPED_LOWER_PRIORITY";
-        assert service.currentSession.sessionToken == 2 : "Session 2 must still remain active";
+            // Hourly chime arrives with priority 1
+            long chimeTrigger = t0 + 500;
+            TrafficPlaybackCoordinator.StartResult chimeRes = coordinator.evaluateStart(
+                "hourly:12:00", "hourly_chime", "Hourly Chime", "bundled", "", chimeTrigger, chimeTrigger + 10
+            );
 
-        // Test 6: Valid completion callback from session 2 -> Completed normally
-        boolean handledValidCallback = service.handleCompletionCallback(2);
-        assert handledValidCallback : "Valid session 2 completion must be accepted";
-        assert "COMPLETED_SESSION_2".equals(service.lastAction) : "Action should be COMPLETED_SESSION_2";
-        assert service.currentSession == null : "Session should be finished";
+            assert chimeRes.decision == TrafficPlaybackCoordinator.StartDecision.DROPPED_LOWER_PRIORITY :
+                "Hourly chime must be DROPPED when preset is in " + state + ", but got: " + chimeRes.decision;
+            assert coordinator.getCurrentSession() == presetSession : "Preset session was incorrectly replaced during state: " + state;
+            assert !presetSession.isCancelled() : "Preset session was cancelled by lower-priority chime in state: " + state;
+            assert presetSession.getState() == state : "Preset session state changed in state: " + state;
+            System.out.println("  ✓ Priority guard passed: Hourly chime dropped while preset is in " + state);
+        }
 
-        // Test 7: Stale alarm (more than 15 min late) -> Aborted
-        long staleTrigger = t0;
-        long nowLate = t0 + 16 * 60 * 1000L; // 16 minutes late
-        boolean startedStale = service.handleAlarmIntent("preset:07:00", "morning", "Morning", "bundled", "", staleTrigger, nowLate);
-        assert !startedStale : "Stale alarm must be aborted";
-        assert "EXPIRED_BEFORE_PLAYBACK".equals(service.lastAction) : "Action should be EXPIRED_BEFORE_PLAYBACK";
+        // =========================================================================
+        // Test 3: Priority preemption: Preset alarm preempts active Hourly Chime
+        // =========================================================================
+        {
+            coordinator.clearSession(coordinator.getCurrentSession());
+            TrafficPlaybackCoordinator.StartResult chimeStart = coordinator.evaluateStart(
+                "hourly:17:00", "hourly_chime", "Hourly Chime", "bundled", "", t0, t0 + 50
+            );
+            assert chimeStart.decision == TrafficPlaybackCoordinator.StartDecision.PROCEED;
+            TrafficPlaybackSession chimeSession = chimeStart.newSession;
+            chimeSession.setState(TrafficPlaybackSession.State.PLAYING);
 
-        // Test 8: Bundled tone resolution
-        String resChime = service.resolveBundledToneResource("bundled", "hourly_chime", "custom_1");
-        assert "tc_hourly_chime".equals(resChime) : "Bundled chime must resolve to tc_hourly_chime, got: " + resChime;
+            // Preset alarm arrives (priority 2 > priority 1)
+            TrafficPlaybackCoordinator.StartResult presetStart = coordinator.evaluateStart(
+                "preset:17:30", "evening", "Evening Sandhya", "bundled", "", t0 + 100, t0 + 100
+            );
+            assert presetStart.decision == TrafficPlaybackCoordinator.StartDecision.PROCEED : "Preset must proceed";
+            assert presetStart.supersededSession == chimeSession : "Chime session must be identified as superseded";
+            assert chimeSession.isCancelled() : "Superseded chime session must be marked cancelled";
+            assert coordinator.getCurrentSession() == presetStart.newSession : "Current session must be the new preset session";
+            System.out.println("  ✓ Preemption passed: Preset alarm preempted active hourly chime and cancelled it");
+        }
 
-        String resAmritvela = service.resolveBundledToneResource("bundled", "amritvela", "custom_1");
-        assert "tc_amritvela".equals(resAmritvela) : "Bundled amritvela must resolve to tc_amritvela, got: " + resAmritvela;
+        // =========================================================================
+        // Test 4: Occurrence-bound audio focus callback validation
+        // Obsolete callbacks from superseded or cancelled session must be rejected!
+        // =========================================================================
+        {
+            coordinator.clearSession(coordinator.getCurrentSession());
+            TrafficPlaybackCoordinator.StartResult s1Result = coordinator.evaluateStart(
+                "custom:al_1", "custom_1", "My Meditation", "file", "/path/song.mp3", t0, t0 + 10
+            );
+            TrafficPlaybackSession s1 = s1Result.newSession;
+            s1.setState(TrafficPlaybackSession.State.PLAYING);
 
-        String resSlotKey = service.resolveBundledToneResource("bundled", "", "evening");
-        assert "tc_evening".equals(resSlotKey) : "SlotKey fallback must resolve to tc_evening, got: " + resSlotKey;
+            // Valid focus callback for s1
+            assert coordinator.validateFocusCallback(s1) : "Focus callback for active s1 must be valid";
 
-        System.out.println("ALL CONCURRENCY, COLLISION, AND TONE RESOLUTION TESTS PASSED!");
+            // S2 arrives and preempts S1
+            TrafficPlaybackCoordinator.StartResult s2Result = coordinator.evaluateStart(
+                "preset:19:30", "dusk", "Dusk Traffic", "bundled", "", t0 + 200, t0 + 200
+            );
+            TrafficPlaybackSession s2 = s2Result.newSession;
+            s2.setState(TrafficPlaybackSession.State.PLAYING);
+
+            // Now an obsolete focus callback arrives for S1: MUST BE REJECTED!
+            assert !coordinator.validateFocusCallback(s1) : "Obsolete focus callback for superseded S1 must be REJECTED";
+            assert coordinator.validateFocusCallback(s2) : "Focus callback for active S2 must be VALID";
+
+            // A callback for a cancelled session must be rejected
+            s2.setCancelled(true);
+            assert !coordinator.validateFocusCallback(s2) : "Focus callback for cancelled S2 must be REJECTED";
+
+            System.out.println("  ✓ Occurrence-bound focus callback validation passed (obsolete callbacks safely ignored)");
+        }
+
+        // =========================================================================
+        // Test 5: Occurrence-bound media callback validation
+        // Mismatched or obsolete tokens must be rejected!
+        // =========================================================================
+        {
+            coordinator.clearSession(coordinator.getCurrentSession());
+            TrafficPlaybackCoordinator.StartResult res = coordinator.evaluateStart(
+                "preset:21:30", "night", "Night Traffic", "bundled", "", t0, t0 + 10
+            );
+            TrafficPlaybackSession s = res.newSession;
+            long token = s.sessionToken;
+
+            assert coordinator.validateMediaCallback(s, token) : "Valid media callback must be accepted";
+            assert !coordinator.validateMediaCallback(s, token - 1) : "Obsolete token must be rejected";
+            assert !coordinator.validateMediaCallback(s, token + 99) : "Future token must be rejected";
+            assert !coordinator.validateMediaCallback(null, token) : "Null session must be rejected";
+
+            System.out.println("  ✓ Media callback token isolation passed");
+        }
+
+        // =========================================================================
+        // Test 6: Stale alarm expiration (>15 mins late)
+        // =========================================================================
+        {
+            coordinator.clearSession(coordinator.getCurrentSession());
+            long staleTrigger = t0;
+            long nowLate = t0 + 16 * 60 * 1000L; // 16 min drift
+            TrafficPlaybackCoordinator.StartResult staleRes = coordinator.evaluateStart(
+                "preset:03:30", "amritvela", "Amritvela", "bundled", "", staleTrigger, nowLate
+            );
+            assert staleRes.decision == TrafficPlaybackCoordinator.StartDecision.EXPIRED :
+                "Stale alarm (>15 min) must be EXPIRED, got: " + staleRes.decision;
+            System.out.println("  ✓ Stale alarm expiration check passed");
+        }
+
+        // =========================================================================
+        // Test 7: Bundled tone resolution logic
+        // =========================================================================
+        {
+            String tone1 = TrafficPlaybackCoordinator.resolveBundledToneKey("bundled", "amritvela", "custom_1");
+            assert "amritvela".equals(tone1) : "Expected amritvela, got: " + tone1;
+
+            String tone2 = TrafficPlaybackCoordinator.resolveBundledToneKey("bundled", "", "evening");
+            assert "evening".equals(tone2) : "Expected evening, got: " + tone2;
+
+            String tone3 = TrafficPlaybackCoordinator.resolveBundledToneKey("bundled", null, null);
+            assert "hourly_chime".equals(tone3) : "Expected hourly_chime fallback, got: " + tone3;
+
+            String tone4 = TrafficPlaybackCoordinator.resolveBundledToneKey("default", "", "");
+            assert "hourly_chime".equals(tone4) : "Expected hourly_chime fallback, got: " + tone4;
+            System.out.println("  ✓ Bundled tone resolution passed");
+        }
+
+        System.out.println("\nALL PRODUCTION REGRESSION TESTS EXECUTED AND PASSED SUCCESSFULLY!");
     }
 }

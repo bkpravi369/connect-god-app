@@ -35,110 +35,14 @@ public class TrafficControlAudioService extends Service {
     private static final int MAX_RETRIES = 3;
     private static final long[] RETRY_DELAYS_MS = { 2500L, 6000L };
     private static final long FOCUS_RESUME_TIMEOUT_MS = 45000L; // 45s timeout
-    private static final long STALE_PLAYBACK_THRESHOLD_MS = 15 * 60 * 1000L; // 15 minutes
 
-    /**
-     * Immutable session representing an exact alarm occurrence.
-     */
-    public static class PlaybackSession {
-        public final String occurrenceId;
-        public final String slotId;
-        public final String slotKey;
-        public final String title;
-        public final String toneType;
-        public final String toneUri;
-        public final long triggerTime;
-        public final int priority; // 2 for preset/custom alarms, 1 for hourly chimes
-        public final long sessionToken;
-        public volatile boolean isCancelled = false;
-
-        public PlaybackSession(
-            String occurrenceId,
-            String slotId,
-            String slotKey,
-            String title,
-            String toneType,
-            String toneUri,
-            long triggerTime,
-            int priority,
-            long sessionToken
-        ) {
-            this.occurrenceId = occurrenceId;
-            this.slotId = slotId;
-            this.slotKey = slotKey;
-            this.title = title;
-            this.toneType = toneType != null ? toneType : "default";
-            this.toneUri = toneUri;
-            this.triggerTime = triggerTime;
-            this.priority = priority;
-            this.sessionToken = sessionToken;
-        }
-    }
-
+    private final TrafficPlaybackCoordinator coordinator = new TrafficPlaybackCoordinator();
     private MediaPlayer mediaPlayer;
     private AudioManager audioManager;
-    private AudioFocusRequest focusRequest;
     private PowerManager.WakeLock wakeLock;
-
-    private static long nextSessionToken = 1;
-    private PlaybackSession currentSession = null;
-    private boolean isPausedForFocus = false;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Handler focusTimeoutHandler = new Handler(Looper.getMainLooper());
-
-    private final Runnable focusTimeoutRunnable = () -> {
-        final PlaybackSession session = currentSession;
-        if (session == null || session.isCancelled) return;
-        Log.w(TAG, "Audio focus not regained within 45s for " + session.slotId + ". Finishing playback.");
-        TrafficControlDiagnostics.recordFailed(getApplicationContext(), session.slotId, "Playback terminated after 45s audio focus timeout");
-        stopAudioAndFinish();
-    };
-
-    private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
-        final PlaybackSession session = currentSession;
-        if (session == null || session.isCancelled) return;
-
-        switch (change) {
-            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
-                Log.i(TAG, "Transient audio focus loss (" + change + ") for " + session.slotId + ". Pausing with 45s timeout.");
-                if (mediaPlayer != null && mediaPlayer.isPlaying()) {
-                    try {
-                        mediaPlayer.pause();
-                        isPausedForFocus = true;
-                        TrafficControlDiagnostics.recordStatus(getApplicationContext(), session.slotId, "PAUSED_FOR_FOCUS", "Transient focus loss; waiting up to 45s");
-                        focusTimeoutHandler.removeCallbacks(focusTimeoutRunnable);
-                        focusTimeoutHandler.postDelayed(focusTimeoutRunnable, FOCUS_RESUME_TIMEOUT_MS);
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error pausing on transient focus loss: " + e.getMessage(), e);
-                    }
-                }
-                break;
-
-            case AudioManager.AUDIOFOCUS_GAIN:
-                Log.i(TAG, "Audio focus gained/regained for " + session.slotId);
-                focusTimeoutHandler.removeCallbacks(focusTimeoutRunnable);
-                if (isPausedForFocus && mediaPlayer != null && !session.isCancelled) {
-                    try {
-                        mediaPlayer.start();
-                        isPausedForFocus = false;
-                        TrafficControlDiagnostics.recordStatus(getApplicationContext(), session.slotId, "RESUMED_AFTER_FOCUS", "Focus regained; resumed playback");
-                    } catch (Exception e) {
-                        Log.e(TAG, "Error resuming playback after focus gain: " + e.getMessage(), e);
-                        stopAudioAndFinish();
-                    }
-                }
-                break;
-
-            case AudioManager.AUDIOFOCUS_LOSS:
-                Log.i(TAG, "Permanent audio focus loss for " + session.slotId + ". Finishing.");
-                focusTimeoutHandler.removeCallbacks(focusTimeoutRunnable);
-                TrafficControlDiagnostics.recordStatus(getApplicationContext(), session.slotId, "ABORTED_FOCUS_LOSS", "Permanent audio focus loss");
-                stopAudioAndFinish();
-                break;
-        }
-    };
 
     @Override
     public void onCreate() {
@@ -156,9 +60,11 @@ public class TrafficControlAudioService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             Log.i(TAG, "Stop action received from user");
-            if (currentSession != null) {
-                currentSession.isCancelled = true;
-                TrafficControlDiagnostics.recordStatus(getApplicationContext(), currentSession.slotId, "STOPPED_BY_USER", "User stopped alarm playback");
+            TrafficPlaybackSession current = coordinator.getCurrentSession();
+            if (current != null) {
+                current.setCancelled(true);
+                TrafficControlDiagnostics.recordStatus(getApplicationContext(), current.slotId, "STOPPED_BY_USER", "User stopped alarm playback");
+                abandonSession(current);
             }
             stopAudioAndFinish();
             return START_NOT_STICKY;
@@ -170,83 +76,64 @@ public class TrafficControlAudioService extends Service {
         }
 
         String slotId = intent.getStringExtra("slotId");
-        if (slotId == null || slotId.isEmpty()) slotId = "slot_unknown";
         String slotKey = intent.getStringExtra("slotKey");
-        if (slotKey == null || slotKey.isEmpty()) slotKey = "hourly_chime";
         String title = intent.getStringExtra("title");
-        if (title == null || title.isEmpty()) title = "Traffic Control";
         long triggerTime = intent.getLongExtra("triggerTime", System.currentTimeMillis());
         String toneType = intent.getStringExtra("toneType");
         String toneUri = intent.getStringExtra("toneUri");
 
-        String occurrenceId = slotId + ":" + triggerTime;
-        // Priority: Hourly chime = 1, Preset alarms & Custom alarms = 2
-        int priority = slotId.startsWith("hourly:") ? 1 : 2;
+        long now = System.currentTimeMillis();
 
-        // 1. Collision & Concurrency Resolution with current session
-        if (currentSession != null && !currentSession.isCancelled && mediaPlayer != null && mediaPlayer.isPlaying()) {
-            if (currentSession.occurrenceId.equals(occurrenceId)) {
-                Log.i(TAG, "Duplicate occurrence intent received for " + occurrenceId + ". Ignoring duplicate start.");
-                return START_NOT_STICKY;
-            }
+        // 1. Evaluate start through coordinator: applies duplicate & priority guards across ALL active states
+        // (including PREPARING, PLAYING, PAUSED_FOR_FOCUS, and RETRYING)
+        TrafficPlaybackCoordinator.StartResult eval = coordinator.evaluateStart(
+            slotId, slotKey, title, toneType, toneUri, triggerTime, now
+        );
 
-            // Compare priorities
-            if (priority < currentSession.priority) {
-                Log.w(TAG, "Incoming alarm " + slotId + " (priority " + priority + ") dropped because active session "
-                    + currentSession.slotId + " has higher priority (" + currentSession.priority + ")");
-                TrafficControlDiagnostics.recordEvent(getApplicationContext(), slotId, "DROPPED_LOWER_PRIORITY",
-                    "Dropped because " + currentSession.slotId + " is active with higher priority");
+        switch (eval.decision) {
+            case IGNORED_DUPLICATE:
+                Log.i(TAG, "Duplicate occurrence intent ignored: " + eval.reason);
                 return START_NOT_STICKY;
-            } else {
-                Log.i(TAG, "Incoming alarm " + slotId + " (priority " + priority + ") preempts active session "
-                    + currentSession.slotId + " (priority " + currentSession.priority + ")");
-                TrafficControlDiagnostics.recordEvent(getApplicationContext(), currentSession.slotId, "PREEMPTED",
-                    "Preempted by incoming alarm " + slotId);
-                // Invalidate old session
-                currentSession.isCancelled = true;
-                cleanupCurrentMediaPlayer();
-            }
+
+            case DROPPED_LOWER_PRIORITY:
+                Log.w(TAG, "Lower priority alarm dropped: " + eval.reason);
+                TrafficControlDiagnostics.recordEvent(getApplicationContext(), slotId != null ? slotId : "unknown", "DROPPED_LOWER_PRIORITY", eval.reason);
+                return START_NOT_STICKY;
+
+            case EXPIRED:
+                Log.w(TAG, "Alarm expired before playback: " + eval.reason);
+                TrafficControlDiagnostics.recordStatus(getApplicationContext(), slotId != null ? slotId : "unknown", "EXPIRED_BEFORE_PLAYBACK", eval.reason);
+                if (coordinator.getCurrentSession() == null || !coordinator.getCurrentSession().isActive()) {
+                    stopAudioAndFinish();
+                }
+                return START_NOT_STICKY;
+
+            case PROCEED:
+                if (eval.supersededSession != null) {
+                    Log.i(TAG, "Active session preempted: " + eval.reason);
+                    TrafficControlDiagnostics.recordEvent(getApplicationContext(), eval.supersededSession.slotId, "PREEMPTED", eval.reason);
+                    // Critical: abandon old focus request and cancel old timeouts when replacing session
+                    abandonSession(eval.supersededSession);
+                    cleanupCurrentMediaPlayer();
+                }
+                break;
         }
 
-        // Cancel previous handlers and timeouts
+        final TrafficPlaybackSession session = eval.newSession;
+
+        // Cancel pending main handler callbacks from previous sessions
         mainHandler.removeCallbacksAndMessages(null);
-        focusTimeoutHandler.removeCallbacksAndMessages(null);
 
-        // 2. Create New Playback Session with unique token
-        long token = ++nextSessionToken;
-        PlaybackSession newSession = new PlaybackSession(
-            occurrenceId,
-            slotId,
-            slotKey,
-            title,
-            toneType,
-            toneUri,
-            triggerTime,
-            priority,
-            token
-        );
-        currentSession = newSession;
-
-        // 3. Update Foreground Notification
-        Notification notification = buildForegroundNotification(title);
+        // Update Foreground Notification for the new session
+        Notification notification = buildForegroundNotification(session.title);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
 
-        // 4. Service-Side Expiration Check
-        long now = System.currentTimeMillis();
-        if (now - triggerTime > STALE_PLAYBACK_THRESHOLD_MS) {
-            Log.w(TAG, "Alarm occurrence " + occurrenceId + " has expired (" + ((now - triggerTime) / 1000) + "s late). Aborting.");
-            TrafficControlDiagnostics.recordStatus(getApplicationContext(), slotId, "EXPIRED_BEFORE_PLAYBACK",
-                "Fired " + ((now - triggerTime) / 1000) + "s late; playback aborted to prevent burst");
-            stopAudioAndFinish();
-            return START_NOT_STICKY;
-        }
-
-        // 5. Begin playback attempt with retry
-        playSessionAudioWithRetry(newSession, 0);
+        // Begin playback attempt
+        playSessionAudioWithRetry(session, 0);
 
         return START_NOT_STICKY;
     }
@@ -266,16 +153,16 @@ public class TrafficControlAudioService extends Service {
         }
     }
 
-    private void playSessionAudioWithRetry(final PlaybackSession session, final int attempt) {
+    private void playSessionAudioWithRetry(final TrafficPlaybackSession session, final int attempt) {
         // Validate session is still active and not superseded
-        if (session.isCancelled || currentSession != session) {
+        if (session.isCancelled() || coordinator.getCurrentSession() != session) {
             Log.i(TAG, "Session " + session.occurrenceId + " is cancelled or superseded. Aborting attempt " + attempt);
             return;
         }
 
         // Check expiration before every retry attempt
         long now = System.currentTimeMillis();
-        if (now - session.triggerTime > STALE_PLAYBACK_THRESHOLD_MS) {
+        if (now - session.triggerTime > TrafficPlaybackCoordinator.STALE_PLAYBACK_THRESHOLD_MS) {
             Log.w(TAG, "Session " + session.occurrenceId + " expired before attempt " + attempt + ". Aborting.");
             TrafficControlDiagnostics.recordStatus(getApplicationContext(), session.slotId, "EXPIRED_BEFORE_PLAYBACK",
                 "Expired during retry (" + ((now - session.triggerTime) / 1000) + "s late)");
@@ -292,16 +179,32 @@ public class TrafficControlAudioService extends Service {
                 .build();
 
             audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+
+            // 2. Create OCCURRENCE-BOUND audio-focus listener and timeout capturing this exact session
+            final TrafficPlaybackSession capturedSession = session;
+            AudioManager.OnAudioFocusChangeListener occurrenceListener = change -> {
+                handleSessionAudioFocusChange(capturedSession, change);
+            };
+            session.audioFocusListener = occurrenceListener;
+
+            session.focusTimeoutRunnable = () -> {
+                handleSessionFocusTimeout(capturedSession);
+            };
+
             int focus;
             if (Build.VERSION.SDK_INT >= 26) {
-                focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                AudioFocusRequest focusReq = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                     .setAudioAttributes(attributes)
-                    .setOnAudioFocusChangeListener(focusListener)
+                    .setOnAudioFocusChangeListener(occurrenceListener)
                     .build();
-                focus = audioManager.requestAudioFocus(focusRequest);
+                session.audioFocusRequest = focusReq;
+                focus = audioManager.requestAudioFocus(focusReq);
             } else {
-                focus = audioManager.requestAudioFocus(focusListener, AudioManager.STREAM_ALARM,
-                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+                focus = audioManager.requestAudioFocus(
+                    occurrenceListener,
+                    AudioManager.STREAM_ALARM,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                );
             }
 
             if (focus != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
@@ -339,12 +242,8 @@ public class TrafficControlAudioService extends Service {
 
             if (!loaded) {
                 // Bundled audio resource fallback
-                int res = R.raw.tc_hourly_chime;
-                if ("bundled".equalsIgnoreCase(session.toneType) && session.toneUri != null && !session.toneUri.isEmpty()) {
-                    res = getAudioResourceId(session.toneUri);
-                } else if (session.slotKey != null && !session.slotKey.isEmpty()) {
-                    res = getAudioResourceId(session.slotKey);
-                }
+                String toneKey = TrafficPlaybackCoordinator.resolveBundledToneKey(session.toneType, session.toneUri, session.slotKey);
+                int res = getAudioResourceId(toneKey);
                 try (android.content.res.AssetFileDescriptor afd = getResources().openRawResourceFd(res)) {
                     mediaPlayer.setDataSource(afd.getFileDescriptor(), afd.getStartOffset(), afd.getLength());
                 }
@@ -356,25 +255,30 @@ public class TrafficControlAudioService extends Service {
             final long sessionToken = session.sessionToken;
 
             mediaPlayer.setOnCompletionListener(mp -> {
-                // Ensure this completion is for the active session
-                if (currentSession != null && currentSession.sessionToken == sessionToken && !currentSession.isCancelled) {
+                if (coordinator.validateMediaCallback(session, sessionToken)) {
+                    session.setState(TrafficPlaybackSession.State.COMPLETED);
                     Log.i(TAG, "Traffic control playback completed normally for " + session.slotId);
                     TrafficControlDiagnostics.recordCompleted(getApplicationContext(), session.slotId);
                     stopAudioAndFinish();
+                } else {
+                    Log.i(TAG, "Ignoring completion callback for obsolete/superseded session: " + session.occurrenceId);
                 }
             });
 
             mediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                if (currentSession != null && currentSession.sessionToken == sessionToken && !currentSession.isCancelled) {
+                if (coordinator.validateMediaCallback(session, sessionToken)) {
+                    session.setState(TrafficPlaybackSession.State.FAILED);
                     Log.e(TAG, "MediaPlayer error for " + session.slotId + ": what=" + what + ", extra=" + extra);
                     TrafficControlDiagnostics.recordFailed(getApplicationContext(), session.slotId, "MediaPlayer error: what=" + what + ", extra=" + extra);
                     stopAudioAndFinish();
+                } else {
+                    Log.i(TAG, "Ignoring MediaPlayer error callback for obsolete session: " + session.occurrenceId);
                 }
                 return true;
             });
 
             mediaPlayer.start();
-            isPausedForFocus = false;
+            session.setState(TrafficPlaybackSession.State.PLAYING);
             Log.i(TAG, "Traffic control audio playback started for " + session.slotId + " (attempt " + (attempt + 1) + ")");
             TrafficControlDiagnostics.recordPlaybackStarted(getApplicationContext(), session.slotId, attempt);
 
@@ -384,24 +288,128 @@ public class TrafficControlAudioService extends Service {
         }
     }
 
-    private void handlePlaybackFailure(final PlaybackSession session, final int attempt, final String reason) {
-        if (session.isCancelled || currentSession != session) return;
+    /**
+     * Occurrence-bound audio focus handler.
+     * Validates captured session identity before taking any action.
+     */
+    private void handleSessionAudioFocusChange(final TrafficPlaybackSession session, final int focusChange) {
+        if (!coordinator.validateFocusCallback(session)) {
+            Log.i(TAG, "Ignoring obsolete focus callback (" + focusChange + ") for superseded/cancelled session: "
+                + (session != null ? session.occurrenceId : "null"));
+            return;
+        }
+
+        switch (focusChange) {
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                Log.i(TAG, "Transient audio focus loss (" + focusChange + ") for " + session.occurrenceId + ". Pausing with 45s timeout.");
+                if (mediaPlayer != null && session.getState() == TrafficPlaybackSession.State.PLAYING) {
+                    try {
+                        mediaPlayer.pause();
+                        session.setState(TrafficPlaybackSession.State.PAUSED_FOR_FOCUS);
+                        TrafficControlDiagnostics.recordStatus(getApplicationContext(), session.slotId, "PAUSED_FOR_FOCUS", "Transient focus loss; waiting up to 45s");
+                        if (session.focusTimeoutRunnable != null) {
+                            focusTimeoutHandler.removeCallbacks(session.focusTimeoutRunnable);
+                            focusTimeoutHandler.postDelayed(session.focusTimeoutRunnable, FOCUS_RESUME_TIMEOUT_MS);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error pausing on transient focus loss: " + e.getMessage(), e);
+                    }
+                }
+                break;
+
+            case AudioManager.AUDIOFOCUS_GAIN:
+                Log.i(TAG, "Audio focus gained/regained for " + session.occurrenceId);
+                if (session.focusTimeoutRunnable != null) {
+                    focusTimeoutHandler.removeCallbacks(session.focusTimeoutRunnable);
+                }
+                if (session.getState() == TrafficPlaybackSession.State.PAUSED_FOR_FOCUS && mediaPlayer != null) {
+                    try {
+                        mediaPlayer.start();
+                        session.setState(TrafficPlaybackSession.State.PLAYING);
+                        TrafficControlDiagnostics.recordStatus(getApplicationContext(), session.slotId, "RESUMED_AFTER_FOCUS", "Focus regained; resumed playback");
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error resuming playback after focus gain: " + e.getMessage(), e);
+                        stopAudioAndFinish();
+                    }
+                }
+                break;
+
+            case AudioManager.AUDIOFOCUS_LOSS:
+                Log.i(TAG, "Permanent audio focus loss for " + session.occurrenceId + ". Finishing.");
+                if (session.focusTimeoutRunnable != null) {
+                    focusTimeoutHandler.removeCallbacks(session.focusTimeoutRunnable);
+                }
+                session.setState(TrafficPlaybackSession.State.FAILED);
+                TrafficControlDiagnostics.recordStatus(getApplicationContext(), session.slotId, "ABORTED_FOCUS_LOSS", "Permanent audio focus loss");
+                stopAudioAndFinish();
+                break;
+        }
+    }
+
+    /**
+     * Occurrence-bound focus timeout handler.
+     */
+    private void handleSessionFocusTimeout(final TrafficPlaybackSession session) {
+        if (!coordinator.validateFocusCallback(session)) {
+            Log.i(TAG, "Ignoring obsolete focus timeout for superseded/cancelled session: "
+                + (session != null ? session.occurrenceId : "null"));
+            return;
+        }
+        if (session.getState() == TrafficPlaybackSession.State.PAUSED_FOR_FOCUS) {
+            Log.w(TAG, "Audio focus not regained within 45s for " + session.occurrenceId + ". Finishing playback.");
+            session.setState(TrafficPlaybackSession.State.FAILED);
+            TrafficControlDiagnostics.recordFailed(getApplicationContext(), session.slotId, "Playback terminated after 45s audio focus timeout");
+            stopAudioAndFinish();
+        }
+    }
+
+    private void handlePlaybackFailure(final TrafficPlaybackSession session, final int attempt, final String reason) {
+        if (session.isCancelled() || coordinator.getCurrentSession() != session) return;
 
         if (attempt < MAX_RETRIES - 1) {
             long delay = RETRY_DELAYS_MS[attempt];
-            Log.i(TAG, "Scheduling retry for " + session.slotId + " in " + delay + "ms (attempt " + (attempt + 1) + ")");
+            session.setState(TrafficPlaybackSession.State.RETRYING);
+            Log.i(TAG, "Scheduling retry for " + session.occurrenceId + " in " + delay + "ms (attempt " + (attempt + 1) + ")");
             TrafficControlDiagnostics.recordStatus(getApplicationContext(), session.slotId, "RETRYING",
                 "Error: " + reason + "; retrying in " + delay + "ms (attempt " + (attempt + 1) + "/" + MAX_RETRIES + ")");
 
             mainHandler.postDelayed(() -> {
-                if (currentSession == session && !session.isCancelled) {
+                if (session == coordinator.getCurrentSession() && !session.isCancelled()) {
                     playSessionAudioWithRetry(session, attempt + 1);
                 }
             }, delay);
         } else {
-            Log.e(TAG, "All " + MAX_RETRIES + " playback attempts failed for " + session.slotId + ". Reason: " + reason);
+            session.setState(TrafficPlaybackSession.State.FAILED);
+            Log.e(TAG, "All " + MAX_RETRIES + " playback attempts failed for " + session.occurrenceId + ". Reason: " + reason);
             TrafficControlDiagnostics.recordFailed(getApplicationContext(), session.slotId, "Failed after " + MAX_RETRIES + " attempts: " + reason);
             stopAudioAndFinish();
+        }
+    }
+
+    /**
+     * Abandons occurrence-bound audio focus and cancels timeouts for a session when replacing or stopping it.
+     */
+    private void abandonSession(TrafficPlaybackSession session) {
+        if (session == null) return;
+        session.setCancelled(true);
+
+        // Cancel occurrence-bound timeout runnable
+        if (session.focusTimeoutRunnable != null) {
+            focusTimeoutHandler.removeCallbacks(session.focusTimeoutRunnable);
+        }
+
+        // Abandon occurrence-bound audio focus request
+        if (audioManager != null) {
+            try {
+                if (Build.VERSION.SDK_INT >= 26 && session.audioFocusRequest instanceof AudioFocusRequest) {
+                    audioManager.abandonAudioFocusRequest((AudioFocusRequest) session.audioFocusRequest);
+                } else if (session.audioFocusListener instanceof AudioManager.OnAudioFocusChangeListener) {
+                    audioManager.abandonAudioFocus((AudioManager.OnAudioFocusChangeListener) session.audioFocusListener);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Error abandoning audio focus for " + session.occurrenceId + ": " + e.getMessage());
+            }
         }
     }
 
@@ -423,23 +431,13 @@ public class TrafficControlAudioService extends Service {
         mainHandler.removeCallbacksAndMessages(null);
         focusTimeoutHandler.removeCallbacksAndMessages(null);
 
-        if (currentSession != null) {
-            currentSession.isCancelled = true;
-            currentSession = null;
+        TrafficPlaybackSession session = coordinator.getCurrentSession();
+        if (session != null) {
+            abandonSession(session);
+            coordinator.clearSession(session);
         }
 
         cleanupCurrentMediaPlayer();
-        isPausedForFocus = false;
-
-        if (audioManager != null) {
-            try {
-                if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
-                    audioManager.abandonAudioFocusRequest(focusRequest);
-                } else {
-                    audioManager.abandonAudioFocus(focusListener);
-                }
-            } catch (Exception ignored) {}
-        }
 
         stopForeground(true);
         stopSelf();
@@ -501,22 +499,13 @@ public class TrafficControlAudioService extends Service {
         mainHandler.removeCallbacksAndMessages(null);
         focusTimeoutHandler.removeCallbacksAndMessages(null);
 
-        if (currentSession != null) {
-            currentSession.isCancelled = true;
-            currentSession = null;
+        TrafficPlaybackSession session = coordinator.getCurrentSession();
+        if (session != null) {
+            abandonSession(session);
+            coordinator.clearSession(session);
         }
 
         cleanupCurrentMediaPlayer();
-
-        if (audioManager != null) {
-            try {
-                if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) {
-                    audioManager.abandonAudioFocusRequest(focusRequest);
-                } else {
-                    audioManager.abandonAudioFocus(focusListener);
-                }
-            } catch (Exception ignored) {}
-        }
 
         if (wakeLock != null && wakeLock.isHeld()) {
             try {

@@ -369,6 +369,9 @@ async function rescheduleTrafficAlarmsNow(): Promise<void> {
           id: `custom:${custom.id}`, time: custom.time,
           slotKey: timeToTrafficSlotKey(custom.time), title: custom.label || 'Traffic Control',
           repeatDays: custom.repeatDays,
+          toneType: custom.toneType || 'bundled',
+          toneUri: custom.toneUri || '',
+          toneTitle: custom.toneTitle || '',
         });
         await TrafficControlNative.scheduleAlarms({ slots: JSON.stringify(slots) });
       } catch (androidErr) {

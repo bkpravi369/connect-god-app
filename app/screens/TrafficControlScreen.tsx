@@ -8,9 +8,16 @@ import {
   TRAFFIC_PRESET_STORAGE_KEY,
   TrafficDiagnosticsData,
   AlarmStatusResult,
+  SystemRingtone,
+  getSystemAlarmTones,
+  pickCustomAudioFile,
+  playToneAudioPreview,
+  stopToneAudioPreview,
+  stopCurrentAlarmPlayback,
 } from '@/services/trafficNativePlugin';
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Modal,
   Pressable,
@@ -39,6 +46,10 @@ import {
   RefreshCw,
   CheckCircle2,
   ShieldAlert,
+  Music,
+  FolderOpen,
+  Smartphone,
+  Check,
 } from 'lucide-react-native';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import {
@@ -55,6 +66,7 @@ import {
   playTrafficSlot,
   stopTrafficAudio,
   subscribeTrafficPlayback,
+  timeToTrafficSlotKey,
 } from '@/services/trafficAudioService';
 import { rescheduleAllTrafficAlarms } from '@/services/notificationService';
 
@@ -67,15 +79,40 @@ export type CustomAlarm = {
   repeatDays: number[] | null;
   loopRingtone: boolean;
   ringtoneKey: string;
+  toneType?: 'bundled' | 'system' | 'file';
+  toneUri?: string;
+  toneTitle?: string;
 };
 
-type AlarmState = {
+export type AlarmState = {
   enabled: boolean;
   snoozeEnabled: boolean;
   repeatDays: number[] | null;
   loopRingtone: boolean;
   ringtoneKey: string;
+  toneType?: 'bundled' | 'system' | 'file';
+  toneUri?: string;
+  toneTitle?: string;
 };
+
+export interface ToneSelection {
+  toneType: 'bundled' | 'system' | 'file';
+  toneUri?: string;
+  toneTitle?: string;
+}
+
+export const BUNDLED_TONES = [
+  { key: 'hourly_chime', title: 'Traffic Control Hourly Chime', subtitle: 'Calming bell chime' },
+  { key: 'amritvela', title: 'Amritvela (3:30 AM)', subtitle: 'Divine soul remembrance' },
+  { key: 'early_morning', title: 'Early Morning (5:45 AM)', subtitle: 'Peaceful dawn meditation' },
+  { key: 'morning', title: 'Morning Study (7:00 AM)', subtitle: 'Murli study remembrance' },
+  { key: 'mid_morning', title: 'Mid-Morning (10:30 AM)', subtitle: 'Mindful pause & withdrawal' },
+  { key: 'noon', title: 'Noon Remembrance (12:00 PM)', subtitle: 'Midday stillness & peace' },
+  { key: 'evening', title: 'Evening Sandhya (5:30 PM)', subtitle: 'Loving spiritual connection' },
+  { key: 'dusk', title: 'Dusk (7:30 PM)', subtitle: 'Twilight contemplation' },
+  { key: 'night', title: 'Night (9:30 PM)', subtitle: 'Evening silence & reflection' },
+  { key: 'late_night', title: 'Late Night (11:00 PM)', subtitle: 'Soul rest & slumber' },
+];
 
 const DEFAULT_ALARM_STATE: AlarmState = {
   enabled: true,
@@ -83,6 +120,9 @@ const DEFAULT_ALARM_STATE: AlarmState = {
   repeatDays: null,
   loopRingtone: false,
   ringtoneKey: 'default',
+  toneType: 'bundled',
+  toneUri: '',
+  toneTitle: 'Traffic Control Hourly Chime',
 };
 
 const DEFAULT_CUSTOM_ALARMS: CustomAlarm[] = [];
@@ -201,6 +241,7 @@ export default function TrafficControlScreen() {
   const [hourlyChimesEnabled, setHourlyChimesEnabled] = useState<boolean>(true);
   const [addOpen, setAddOpen] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
+  const [editingToneAlarmId, setEditingToneAlarmId] = useState<string | null>(null);
 
   // Active audio playback state
   const [activePlayingSlot, setActivePlayingSlot] = useState<string | null>(null);
@@ -220,6 +261,9 @@ export default function TrafficControlScreen() {
         repeatDays: r.repeatDays,
         loopRingtone: r.loopRingtone,
         ringtoneKey: r.ringtoneKey,
+        toneType: r.toneType,
+        toneUri: r.toneUri,
+        toneTitle: r.toneTitle,
       };
     });
     setPresetStates(map);
@@ -232,6 +276,8 @@ export default function TrafficControlScreen() {
     return () => {
       unsubscribe();
       stopTrafficAudio();
+      stopCurrentAlarmPlayback();
+      stopToneAudioPreview();
     };
   }, []);
 
@@ -239,8 +285,26 @@ export default function TrafficControlScreen() {
   const handleTogglePreview = async (slotKey: string) => {
     if (activePlayingSlot === slotKey) {
       await stopTrafficAudio();
+      await stopCurrentAlarmPlayback();
+      await stopToneAudioPreview();
+      setActivePlayingSlot(null);
       toast.show('Playback stopped', 'info');
     } else {
+      const custom = customAlarms.find((c) => c.id === slotKey);
+      if (custom && isAndroidTrafficApp()) {
+        await stopTrafficAudio();
+        await stopCurrentAlarmPlayback();
+        const playing = await playToneAudioPreview(
+          custom.toneType || 'bundled',
+          custom.toneUri,
+          custom.toneUri ? undefined : timeToTrafficSlotKey(custom.time)
+        );
+        if (playing) {
+          setActivePlayingSlot(slotKey);
+          toast.show(`Playing ${custom.toneTitle || 'Custom Tone'}`, 'info');
+        }
+        return;
+      }
       const slot = TRAFFIC_TRACK_SLOTS.find((s) => s.slotKey === slotKey || s.time === slotKey);
       const title = slot?.titleEn || 'Track';
       toast.show(`Playing ${title} (Non-repeating)`, 'info');
@@ -286,6 +350,9 @@ export default function TrafficControlScreen() {
       repeatDays: state.repeatDays,
       loopRingtone: state.loopRingtone,
       ringtoneKey: state.ringtoneKey,
+      toneType: state.toneType || 'bundled',
+      toneUri: state.toneUri || '',
+      toneTitle: state.toneTitle || 'Traffic Control Hourly Chime',
     };
     const next = [...customAlarms, newAlarm].sort((a, b) => a.time.localeCompare(b.time));
     setCustomAlarms(next);
@@ -293,6 +360,18 @@ export default function TrafficControlScreen() {
     setPresetStates((prev) => ({ ...prev, [`custom:${newAlarm.id}`]: state }));
     syncAlarms();
     toast.show('Custom alarm created', 'success');
+  };
+
+  const handleSelectToneForExistingAlarm = (tone: ToneSelection) => {
+    if (editingToneAlarmId) {
+      updateAlarmState(`custom:${editingToneAlarmId}`, {
+        toneType: tone.toneType,
+        toneUri: tone.toneUri,
+        toneTitle: tone.toneTitle,
+      });
+      toast.show(`Tone changed: ${tone.toneTitle || 'Selected Tone'}`, 'success');
+      setEditingToneAlarmId(null);
+    }
   };
 
   const deleteCustomAlarm = (id: string) => {
@@ -481,6 +560,7 @@ export default function TrafficControlScreen() {
                 onEnabledChange={(v) => updateAlarmState(key, { enabled: v })}
                 onSnoozeChange={(v) => updateAlarmState(key, { snoozeEnabled: v })}
                 onRepeatChange={(d) => updateAlarmState(key, { repeatDays: d })}
+                onChangeTone={() => setEditingToneAlarmId(row.id)}
               />
             );
           })
@@ -517,6 +597,20 @@ export default function TrafficControlScreen() {
         onShare={handleShareReport}
         onCopy={handleCopyReport}
       />
+
+      {/* Tone Picker Modal for editing an existing custom alarm */}
+      {editingToneAlarmId && (
+        <TonePickerModal
+          visible={!!editingToneAlarmId}
+          currentTone={{
+            toneType: getAlarmState(`custom:${editingToneAlarmId}`).toneType || 'bundled',
+            toneUri: getAlarmState(`custom:${editingToneAlarmId}`).toneUri || '',
+            toneTitle: getAlarmState(`custom:${editingToneAlarmId}`).toneTitle || 'Traffic Control Hourly Chime',
+          }}
+          onClose={() => setEditingToneAlarmId(null)}
+          onSelectTone={handleSelectToneForExistingAlarm}
+        />
+      )}
     </View>
   );
 }
@@ -638,6 +732,7 @@ function CustomAlarmCard({
   onEnabledChange,
   onSnoozeChange,
   onRepeatChange,
+  onChangeTone,
 }: {
   slotKey: string;
   time: string;
@@ -651,6 +746,7 @@ function CustomAlarmCard({
   onEnabledChange: (v: boolean) => void;
   onSnoozeChange: (v: boolean) => void;
   onRepeatChange: (d: number[] | null) => void;
+  onChangeTone: () => void;
 }) {
   return (
     <View style={[styles.alarmCard, !state.enabled && styles.alarmCardOff, isPlaying && styles.alarmCardPlaying]}>
@@ -699,6 +795,25 @@ function CustomAlarmCard({
 
       {expanded && (
         <View style={styles.alarmExpanded}>
+          {/* Alarm Tone Section */}
+          <View style={styles.expandRow}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <View style={styles.expandLeft}>
+                <Music color={COLORS.neutral[500]} size={16} strokeWidth={2} />
+                <Text style={styles.expandLabel}>Alarm Tone</Text>
+              </View>
+              <Text style={styles.expandToneTitle} numberOfLines={1}>
+                {state.toneTitle || 'Traffic Control Hourly Chime'}
+              </Text>
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.changeToneBtn, pressed && styles.btnPressed]}
+              onPress={onChangeTone}
+            >
+              <Text style={styles.changeToneBtnText}>Change Tone</Text>
+            </Pressable>
+          </View>
+
           <View style={styles.expandRow}>
             <View style={styles.expandLeft}>
               <Clock color={COLORS.neutral[500]} size={16} strokeWidth={2} />
@@ -754,7 +869,358 @@ function CustomAlarmCard({
 }
 
 /**
- * Add Custom Alarm Modal featuring Custom Time, Label, Snooze, and Repeat Days
+ * Modal to pick alarm tone:
+ * 1. Bundled BK spiritual tracks/chimes
+ * 2. System alarm ringtones
+ * 3. User-imported audio file from device storage (copied into device-protected storage)
+ */
+function TonePickerModal({
+  visible,
+  currentTone,
+  onClose,
+  onSelectTone,
+}: {
+  visible: boolean;
+  currentTone?: ToneSelection;
+  onClose: () => void;
+  onSelectTone: (tone: ToneSelection) => void;
+}) {
+  const toast = useToast();
+  const [tab, setTab] = useState<'bundled' | 'system' | 'file'>('bundled');
+  const [selected, setSelected] = useState<ToneSelection>(
+    currentTone || { toneType: 'bundled', toneUri: '', toneTitle: 'Traffic Control Hourly Chime' }
+  );
+  const [playingKey, setPlayingKey] = useState<string | null>(null);
+  const [systemTones, setSystemTones] = useState<SystemRingtone[]>([]);
+  const [loadingSystemTones, setLoadingSystemTones] = useState(false);
+  const [importedFile, setImportedFile] = useState<ToneSelection | null>(null);
+  const [pickingFile, setPickingFile] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      if (currentTone) {
+        setSelected(currentTone);
+        if (currentTone.toneType === 'file') {
+          setTab('file');
+          setImportedFile(currentTone);
+        } else if (currentTone.toneType === 'system') {
+          setTab('system');
+        } else {
+          setTab('bundled');
+        }
+      }
+    } else {
+      stopToneAudioPreview();
+      setPlayingKey(null);
+    }
+  }, [visible, currentTone]);
+
+  useEffect(() => {
+    if (visible && tab === 'system' && systemTones.length === 0 && !loadingSystemTones) {
+      setLoadingSystemTones(true);
+      getSystemAlarmTones()
+        .then((tones) => {
+          setSystemTones(tones);
+          setLoadingSystemTones(false);
+        })
+        .catch(() => setLoadingSystemTones(false));
+    }
+  }, [visible, tab]);
+
+  const handleTogglePreview = async (type: 'bundled' | 'system' | 'file', uri?: string) => {
+    const key = `${type}:${uri || 'default'}`;
+    if (playingKey === key) {
+      await stopToneAudioPreview();
+      setPlayingKey(null);
+    } else {
+      await stopToneAudioPreview();
+      const started = await playToneAudioPreview(type, uri);
+      if (started) {
+        setPlayingKey(key);
+      }
+    }
+  };
+
+  const handlePickFile = async () => {
+    try {
+      setPickingFile(true);
+      const res = await pickCustomAudioFile();
+      setPickingFile(false);
+      if (!res.cancelled && res.toneUri) {
+        const tone: ToneSelection = {
+          toneType: 'file',
+          toneUri: res.toneUri,
+          toneTitle: res.toneTitle || 'Custom Audio File',
+        };
+        setImportedFile(tone);
+        setSelected(tone);
+        toast.show('Audio imported to secure storage', 'success');
+      }
+    } catch (e: any) {
+      setPickingFile(false);
+      toast.show(e?.message || 'Failed to select audio file', 'error');
+    }
+  };
+
+  const handleApply = () => {
+    stopToneAudioPreview();
+    setPlayingKey(null);
+    onSelectTone(selected);
+    onClose();
+  };
+
+  const handleClose = () => {
+    stopToneAudioPreview();
+    setPlayingKey(null);
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
+      <View style={styles.modalOverlay}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+        <View style={styles.toneModalSheet}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Alarm Tone</Text>
+            <Pressable style={styles.modalClose} onPress={handleClose} hitSlop={12}>
+              <X color={COLORS.neutral[500]} size={20} strokeWidth={2.2} />
+            </Pressable>
+          </View>
+
+          {/* Tab Selector */}
+          <View style={styles.tabRow}>
+            <Pressable
+              style={[styles.tabBtn, tab === 'bundled' && styles.tabBtnActive]}
+              onPress={() => setTab('bundled')}
+            >
+              <Text style={[styles.tabBtnText, tab === 'bundled' && styles.tabBtnTextActive]}>
+                🕊️ BK Songs
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tabBtn, tab === 'system' && styles.tabBtnActive]}
+              onPress={() => setTab('system')}
+            >
+              <Text style={[styles.tabBtnText, tab === 'system' && styles.tabBtnTextActive]}>
+                📱 Phone Tones
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.tabBtn, tab === 'file' && styles.tabBtnActive]}
+              onPress={() => setTab('file')}
+            >
+              <Text style={[styles.tabBtnText, tab === 'file' && styles.tabBtnTextActive]}>
+                📁 Choose File
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* Tab 1: Bundled Spiritual Songs */}
+          {tab === 'bundled' && (
+            <ScrollView style={styles.toneList} showsVerticalScrollIndicator={false}>
+              {BUNDLED_TONES.map((t) => {
+                const isSelected =
+                  selected.toneType === 'bundled' &&
+                  (selected.toneUri === t.key || (!selected.toneUri && t.key === 'hourly_chime'));
+                const isPlaying = playingKey === `bundled:${t.key}`;
+
+                return (
+                  <Pressable
+                    key={t.key}
+                    style={[styles.toneItem, isSelected && styles.toneItemActive]}
+                    onPress={() =>
+                      setSelected({
+                        toneType: 'bundled',
+                        toneUri: t.key,
+                        toneTitle: t.title,
+                      })
+                    }
+                  >
+                    <View style={[styles.toneRadio, isSelected && styles.toneRadioActive]}>
+                      {isSelected && <View style={styles.toneRadioInner} />}
+                    </View>
+
+                    <View style={styles.toneInfo}>
+                      <Text
+                        style={[styles.toneTitle, isSelected && styles.toneTitleActive]}
+                        numberOfLines={1}
+                      >
+                        {t.title}
+                      </Text>
+                      <Text style={styles.toneSubtitle} numberOfLines={1}>
+                        {t.subtitle}
+                      </Text>
+                    </View>
+
+                    <Pressable
+                      style={[styles.tonePreviewBtn, isPlaying && styles.tonePreviewBtnActive]}
+                      onPress={() => handleTogglePreview('bundled', t.key)}
+                      hitSlop={8}
+                    >
+                      {isPlaying ? (
+                        <Square color="#ffffff" size={14} fill="#ffffff" strokeWidth={2} />
+                      ) : (
+                        <Play
+                          color={COLORS.primary[700]}
+                          size={14}
+                          fill={COLORS.primary[700]}
+                          strokeWidth={2}
+                        />
+                      )}
+                    </Pressable>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* Tab 2: Device System Alarm Tones */}
+          {tab === 'system' && (
+            <ScrollView style={styles.toneList} showsVerticalScrollIndicator={false}>
+              {loadingSystemTones ? (
+                <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={COLORS.primary[600]} />
+                  <Text style={[styles.toneSubtitle, { marginTop: 8 }]}>Loading system tones…</Text>
+                </View>
+              ) : systemTones.length === 0 ? (
+                <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                  <Text style={styles.emptyText}>No device alarm ringtones found</Text>
+                </View>
+              ) : (
+                systemTones.map((st) => {
+                  const isSelected = selected.toneType === 'system' && selected.toneUri === st.uri;
+                  const isPlaying = playingKey === `system:${st.uri}`;
+
+                  return (
+                    <Pressable
+                      key={st.uri}
+                      style={[styles.toneItem, isSelected && styles.toneItemActive]}
+                      onPress={() =>
+                        setSelected({
+                          toneType: 'system',
+                          toneUri: st.uri,
+                          toneTitle: st.title,
+                        })
+                      }
+                    >
+                      <View style={[styles.toneRadio, isSelected && styles.toneRadioActive]}>
+                        {isSelected && <View style={styles.toneRadioInner} />}
+                      </View>
+
+                      <View style={styles.toneInfo}>
+                        <Text
+                          style={[styles.toneTitle, isSelected && styles.toneTitleActive]}
+                          numberOfLines={1}
+                        >
+                          {st.title}
+                        </Text>
+                        <Text style={styles.toneSubtitle}>Device Alarm</Text>
+                      </View>
+
+                      <Pressable
+                        style={[styles.tonePreviewBtn, isPlaying && styles.tonePreviewBtnActive]}
+                        onPress={() => handleTogglePreview('system', st.uri)}
+                        hitSlop={8}
+                      >
+                        {isPlaying ? (
+                          <Square color="#ffffff" size={14} fill="#ffffff" strokeWidth={2} />
+                        ) : (
+                          <Play
+                            color={COLORS.primary[700]}
+                            size={14}
+                            fill={COLORS.primary[700]}
+                            strokeWidth={2}
+                          />
+                        )}
+                      </Pressable>
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+          )}
+
+          {/* Tab 3: Custom File Picker */}
+          {tab === 'file' && (
+            <View style={{ paddingVertical: SPACING.sm }}>
+              <View style={[styles.filePickCard, importedFile && styles.filePickCardActive]}>
+                <FolderOpen color={COLORS.primary[600]} size={36} strokeWidth={1.8} />
+                <Pressable
+                  style={({ pressed }) => [styles.filePickBtn, pressed && styles.btnPressed]}
+                  onPress={handlePickFile}
+                  disabled={pickingFile}
+                >
+                  {pickingFile ? (
+                    <ActivityIndicator size="small" color="#ffffff" />
+                  ) : (
+                    <>
+                      <Music color="#ffffff" size={16} strokeWidth={2} />
+                      <Text style={styles.filePickBtnText}>Select Audio File from Phone</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Text style={styles.filePickDesc}>
+                  Supports MP3 and WAV. Audio is saved to app storage so alarms play reliably even after reboot.
+                </Text>
+              </View>
+
+              {importedFile && (
+                <Pressable
+                  style={[styles.toneItem, styles.toneItemActive]}
+                  onPress={() => setSelected(importedFile)}
+                >
+                  <View style={[styles.toneRadio, styles.toneRadioActive]}>
+                    <View style={styles.toneRadioInner} />
+                  </View>
+
+                  <View style={styles.toneInfo}>
+                    <Text style={[styles.toneTitle, styles.toneTitleActive]} numberOfLines={1}>
+                      {importedFile.toneTitle}
+                    </Text>
+                    <Text style={styles.toneSubtitle}>Custom Phone Audio</Text>
+                  </View>
+
+                  <Pressable
+                    style={[
+                      styles.tonePreviewBtn,
+                      playingKey === `file:${importedFile.toneUri}` && styles.tonePreviewBtnActive,
+                    ]}
+                    onPress={() => handleTogglePreview('file', importedFile.toneUri)}
+                    hitSlop={8}
+                  >
+                    {playingKey === `file:${importedFile.toneUri}` ? (
+                      <Square color="#ffffff" size={14} fill="#ffffff" strokeWidth={2} />
+                    ) : (
+                      <Play
+                        color={COLORS.primary[700]}
+                        size={14}
+                        fill={COLORS.primary[700]}
+                        strokeWidth={2}
+                      />
+                    )}
+                  </Pressable>
+                </Pressable>
+              )}
+            </View>
+          )}
+
+          {/* Action Buttons */}
+          <View style={styles.toneModalActions}>
+            <Pressable style={styles.toneModalCancelBtn} onPress={handleClose}>
+              <Text style={styles.toneModalCancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={styles.toneModalApplyBtn} onPress={handleApply}>
+              <Text style={styles.toneModalApplyText}>Select Tone</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/**
+ * Add Custom Alarm Modal featuring Custom Time, Label, Snooze, Repeat Days, and Tone Selection
  */
 function AddAlarmModal({
   visible,
@@ -771,6 +1237,12 @@ function AddAlarmModal({
   const [label, setLabel] = useState('');
   const [snoozeEnabled, setSnoozeEnabled] = useState(true);
   const [repeatDays, setRepeatDays] = useState<number[] | null>(null);
+  const [selectedTone, setSelectedTone] = useState<ToneSelection>({
+    toneType: 'bundled',
+    toneUri: '',
+    toneTitle: 'Traffic Control Hourly Chime',
+  });
+  const [tonePickerOpen, setTonePickerOpen] = useState(false);
 
   useEffect(() => {
     if (!visible) {
@@ -780,6 +1252,12 @@ function AddAlarmModal({
       setLabel('');
       setSnoozeEnabled(true);
       setRepeatDays(null);
+      setSelectedTone({
+        toneType: 'bundled',
+        toneUri: '',
+        toneTitle: 'Traffic Control Hourly Chime',
+      });
+      setTonePickerOpen(false);
     }
   }, [visible]);
 
@@ -804,6 +1282,9 @@ function AddAlarmModal({
       repeatDays,
       loopRingtone: false,
       ringtoneKey: 'default',
+      toneType: selectedTone.toneType,
+      toneUri: selectedTone.toneUri,
+      toneTitle: selectedTone.toneTitle,
     });
   };
 
@@ -864,6 +1345,25 @@ function AddAlarmModal({
             onChangeText={setLabel}
           />
 
+          {/* Alarm Tone Setting */}
+          <View style={styles.modalSettingRow}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <View style={styles.expandLeft}>
+                <Music color={COLORS.neutral[600]} size={16} strokeWidth={2} />
+                <Text style={styles.modalSettingLabel}>Alarm Tone</Text>
+              </View>
+              <Text style={styles.modalToneSub} numberOfLines={1}>
+                {selectedTone.toneTitle || 'Traffic Control Hourly Chime'}
+              </Text>
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.changeToneBtn, pressed && styles.btnPressed]}
+              onPress={() => setTonePickerOpen(true)}
+            >
+              <Text style={styles.changeToneBtnText}>Change Tone</Text>
+            </Pressable>
+          </View>
+
           {/* Snooze Setting for Custom Alarm */}
           <View style={styles.modalSettingRow}>
             <View style={styles.expandLeft}>
@@ -913,6 +1413,16 @@ function AddAlarmModal({
             <Plus color="#ffffff" size={18} strokeWidth={2.4} />
             <Text style={styles.modalAddBtnText}>Save Alarm</Text>
           </Pressable>
+
+          <TonePickerModal
+            visible={tonePickerOpen}
+            currentTone={selectedTone}
+            onClose={() => setTonePickerOpen(false)}
+            onSelectTone={(t) => {
+              setSelectedTone(t);
+              setTonePickerOpen(false);
+            }}
+          />
         </View>
       </View>
     </Modal>
@@ -1309,6 +1819,210 @@ const styles = StyleSheet.create({
   deleteRow: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm, paddingVertical: SPACING.xs },
   deleteText: { fontFamily: FONTS.sansMedium, fontSize: 13, color: COLORS.error[500] },
   expandChevron: { position: 'absolute', top: SPACING.md, right: 76 },
+  expandToneTitle: {
+    fontFamily: FONTS.sansMedium,
+    fontSize: 12,
+    color: COLORS.primary[700],
+    marginTop: 2,
+    marginLeft: 24,
+  },
+  modalToneSub: {
+    fontFamily: FONTS.sansMedium,
+    fontSize: 12,
+    color: COLORS.primary[700],
+    marginTop: 2,
+    marginLeft: 24,
+  },
+  changeToneBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.md,
+    backgroundColor: COLORS.primary[50],
+    borderWidth: 1,
+    borderColor: COLORS.primary[200],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  changeToneBtnText: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 12,
+    color: COLORS.primary[700],
+  },
+  // Tone Picker Modal
+  toneModalSheet: {
+    backgroundColor: COLORS.neutral[0],
+    borderTopLeftRadius: RADIUS['2xl'],
+    borderTopRightRadius: RADIUS['2xl'],
+    paddingTop: SPACING.lg,
+    paddingHorizontal: SPACING.lg,
+    maxHeight: '85%',
+  },
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.neutral[100],
+    borderRadius: RADIUS.lg,
+    padding: 3,
+    marginBottom: SPACING.md,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: RADIUS.md,
+  },
+  tabBtnActive: {
+    backgroundColor: COLORS.neutral[0],
+    ...SHADOWS.sm,
+  },
+  tabBtnText: {
+    fontFamily: FONTS.sansMedium,
+    fontSize: 12,
+    color: COLORS.neutral[600],
+  },
+  tabBtnTextActive: {
+    fontFamily: FONTS.sansBold,
+    color: COLORS.primary[700],
+  },
+  toneList: {
+    maxHeight: 320,
+    minHeight: 180,
+  },
+  toneItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.lg,
+    marginBottom: 6,
+    backgroundColor: COLORS.neutral[50],
+    borderWidth: 1,
+    borderColor: COLORS.neutral[200],
+  },
+  toneItemActive: {
+    backgroundColor: COLORS.primary[50],
+    borderColor: COLORS.primary[300],
+  },
+  toneRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.neutral[400],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  toneRadioActive: {
+    borderColor: COLORS.primary[600],
+    backgroundColor: COLORS.primary[600],
+  },
+  toneRadioInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.neutral[0],
+  },
+  toneInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  toneTitle: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 13,
+    color: COLORS.neutral[900],
+  },
+  toneTitleActive: {
+    color: COLORS.primary[900],
+  },
+  toneSubtitle: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: COLORS.neutral[500],
+    marginTop: 1,
+  },
+  tonePreviewBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.neutral[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tonePreviewBtnActive: {
+    backgroundColor: COLORS.primary[600],
+  },
+  filePickCard: {
+    backgroundColor: COLORS.neutral[50],
+    borderWidth: 1.5,
+    borderColor: COLORS.neutral[200],
+    borderStyle: 'dashed',
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  filePickCardActive: {
+    borderColor: COLORS.primary[400],
+    backgroundColor: COLORS.primary[50],
+    borderStyle: 'solid',
+  },
+  filePickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.primary[600],
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: RADIUS.lg,
+    marginTop: 8,
+  },
+  filePickBtnText: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 13,
+    color: COLORS.neutral[0],
+  },
+  filePickDesc: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    color: COLORS.neutral[500],
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 16,
+  },
+  toneModalActions: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.neutral[100],
+    marginTop: SPACING.xs,
+  },
+  toneModalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.neutral[100],
+    alignItems: 'center',
+  },
+  toneModalCancelText: {
+    fontFamily: FONTS.sansSemiBold,
+    fontSize: 14,
+    color: COLORS.neutral[700],
+  },
+  toneModalApplyBtn: {
+    flex: 2,
+    paddingVertical: 12,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.primary[600],
+    alignItems: 'center',
+  },
+  toneModalApplyText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 14,
+    color: COLORS.neutral[0],
+  },
   toggle: { width: 46, height: 26, borderRadius: 13, backgroundColor: COLORS.neutral[300], padding: 2 },
   toggleOn: { backgroundColor: COLORS.primary[600] },
   toggleKnob: { width: 22, height: 22, borderRadius: 11, backgroundColor: COLORS.neutral[0], ...SHADOWS.sm },

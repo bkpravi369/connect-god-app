@@ -8,6 +8,9 @@ export interface NativeTrafficSlot {
   slotKey: string;
   title: string;
   repeatDays?: number[] | null;
+  toneType?: 'bundled' | 'system' | 'file';
+  toneUri?: string;
+  toneTitle?: string;
 }
 
 export interface DiagnosticSlotRecord {
@@ -15,6 +18,10 @@ export interface DiagnosticSlotRecord {
   time: string;
   slotKey: string;
   title: string;
+  repeatDays?: number[] | null;
+  toneType?: string;
+  toneUri?: string;
+  toneTitle?: string;
   scheduledTrigger?: number;
   scheduledTriggerFormatted?: string;
   lastReceivedAt?: number;
@@ -55,6 +62,18 @@ export interface TrafficDiagnosticsData {
   events?: DiagnosticEventItem[];
 }
 
+export interface SystemRingtone {
+  title: string;
+  uri: string;
+}
+
+export interface ToneSelectionResult {
+  cancelled: boolean;
+  toneType?: 'bundled' | 'system' | 'file';
+  toneUri?: string;
+  toneTitle?: string;
+}
+
 export interface TrafficControlNativePlugin {
   scheduleAlarms(options: { slots: string }): Promise<{ success: boolean }>;
   cancelAllAlarms(): Promise<{ success: boolean }>;
@@ -64,6 +83,11 @@ export interface TrafficControlNativePlugin {
   exportDiagnostics(): Promise<{ report: string }>;
   isIgnoringBatteryOptimizations(): Promise<{ isIgnoring: boolean }>;
   requestIgnoreBatteryOptimizations(): Promise<{ requested: boolean }>;
+  getSystemRingtones(): Promise<{ ringtones: SystemRingtone[] }>;
+  pickCustomAudio(): Promise<ToneSelectionResult>;
+  playTonePreview(options: { toneType: string; toneUri?: string; slotKey?: string }): Promise<{ playing: boolean }>;
+  stopTonePreview(): Promise<{ playing: boolean }>;
+  stopAlarmPlayback(): Promise<{ success: boolean }>;
 }
 
 export const TrafficControlNative = registerPlugin<TrafficControlNativePlugin>('TrafficControlNative');
@@ -133,5 +157,55 @@ export async function exportTrafficDiagnosticsReport(): Promise<string> {
   } catch (err: any) {
     console.error('[TrafficNativePlugin] exportDiagnostics error:', err);
     return `Failed to export diagnostics report: ${err?.message || err}`;
+  }
+}
+
+export async function getSystemAlarmTones(): Promise<SystemRingtone[]> {
+  if (!isAndroidTrafficApp()) return [];
+  try {
+    const res = await TrafficControlNative.getSystemRingtones();
+    return res.ringtones || [];
+  } catch (err) {
+    console.error('[TrafficNativePlugin] getSystemRingtones error:', err);
+    return [];
+  }
+}
+
+export async function pickCustomAudioFile(): Promise<ToneSelectionResult> {
+  if (!isAndroidTrafficApp()) return { cancelled: true };
+  try {
+    return await TrafficControlNative.pickCustomAudio();
+  } catch (err) {
+    console.error('[TrafficNativePlugin] pickCustomAudio error:', err);
+    throw err;
+  }
+}
+
+export async function playToneAudioPreview(toneType: string, toneUri?: string, slotKey?: string): Promise<boolean> {
+  if (!isAndroidTrafficApp()) return false;
+  try {
+    const res = await TrafficControlNative.playTonePreview({ toneType, toneUri, slotKey });
+    return !!res.playing;
+  } catch (err) {
+    console.error('[TrafficNativePlugin] playTonePreview error:', err);
+    return false;
+  }
+}
+
+export async function stopToneAudioPreview(): Promise<void> {
+  if (!isAndroidTrafficApp()) return;
+  try {
+    await TrafficControlNative.stopTonePreview();
+  } catch (err) {
+    console.error('[TrafficNativePlugin] stopTonePreview error:', err);
+  }
+}
+
+export async function stopCurrentAlarmPlayback(): Promise<void> {
+  if (!isAndroidTrafficApp()) return;
+  try {
+    await TrafficControlNative.stopAlarmPlayback();
+  } catch (err) {
+    console.error('[TrafficNativePlugin] stopAlarmPlayback error:', err);
   }
 }

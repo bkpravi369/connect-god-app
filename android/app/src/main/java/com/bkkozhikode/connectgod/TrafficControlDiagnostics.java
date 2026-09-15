@@ -229,6 +229,9 @@ public final class TrafficControlDiagnostics {
                 record.put("slotKey", cfg.optString("slotKey"));
                 record.put("title", cfg.optString("title"));
                 record.put("repeatDays", cfg.optJSONArray("repeatDays"));
+                record.put("toneType", cfg.optString("toneType", "bundled"));
+                record.put("toneUri", cfg.optString("toneUri", ""));
+                record.put("toneTitle", cfg.optString("toneTitle", ""));
                 slotsArray.put(record);
             }
             root.put("slots", slotsArray);

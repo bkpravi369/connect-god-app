@@ -58,17 +58,45 @@ public class TrafficControlReceiver extends BroadcastReceiver {
                 return;
             }
 
-            // 4. Start dedicated Foreground Audio Service
+            TrafficControlDiagnostics.recordStatus(context, slotId, "CLAIMED", "Alarm claimed by receiver; starting service");
+
+            // 4. Start dedicated Foreground Audio Service with bounded retry
             Intent serviceIntent = new Intent(context, TrafficControlAudioService.class);
             serviceIntent.putExtra("slotId", slot.optString("id", slotId));
             serviceIntent.putExtra("title", slot.optString("title", "Traffic Control"));
             serviceIntent.putExtra("slotKey", slot.optString("slotKey", "hourly_chime"));
             serviceIntent.putExtra("triggerTime", triggerTime);
-            ContextCompat.startForegroundService(context, serviceIntent);
+            serviceIntent.putExtra("toneType", slot.optString("toneType", ""));
+            serviceIntent.putExtra("toneUri", slot.optString("toneUri", ""));
+
+            boolean started = false;
+            Exception lastException = null;
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    ContextCompat.startForegroundService(context, serviceIntent);
+                    started = true;
+                    break;
+                } catch (Exception e) {
+                    lastException = e;
+                    Log.w(TAG, "Attempt " + attempt + " failed to start service: " + e.getMessage());
+                    if (attempt < 2) {
+                        try { Thread.sleep(200); } catch (InterruptedException ignored) {}
+                    }
+                }
+            }
+
+            if (!started) {
+                Log.e(TAG, "Error starting TrafficControlAudioService after retries", lastException);
+                if (slotId != null) {
+                    TrafficControlDiagnostics.recordFailed(context, slotId, "Foreground service start failed: " + (lastException != null ? lastException.getMessage() : "unknown"));
+                    TrafficControlScheduler.resetPlayedForSlot(context, slotId);
+                }
+            }
         } catch (Exception e) {
             Log.e(TAG, "Error starting TrafficControlAudioService: " + e.getMessage(), e);
             if (slotId != null) {
                 TrafficControlDiagnostics.recordFailed(context, slotId, "Receiver service start failed: " + e.getMessage());
+                TrafficControlScheduler.resetPlayedForSlot(context, slotId);
             }
         } finally {
             if (wakeLock != null && wakeLock.isHeld()) {

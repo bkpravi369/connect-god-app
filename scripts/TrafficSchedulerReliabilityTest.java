@@ -121,6 +121,7 @@ public class TrafficSchedulerReliabilityTest {
         testNextOccurrenceFailureAndBoundedRecovery();
         testInterruptedScheduleTransactionsAndReceiverLookup();
         testCombinedTransactionAndPendingSlotRecovery();
+        testTransactionExhaustionRollbackConsistency();
         testStorageFailureHandling();
         testPerSlotRebootRestorationIsolation();
         testProductionCalendarCalculations();
@@ -588,6 +589,183 @@ public class TrafficSchedulerReliabilityTest {
                     System.out.println("  ✓ Transaction retry exhaustion verified: visible diagnostics retained, transaction state cleared, recovery alarm cancelled");
                 }
             }
+        } finally {
+            TrafficControlScheduler.resetAdapters();
+        }
+    }
+
+    /**
+     * Test 2c: Consistent transaction exhaustion rollback and diagnostics survival.
+     * Change A from 07:00 to 08:00 successfully, make B fail through all retries,
+     * and verify that persisted configuration and registered alarms agree after exhaustion.
+     * Also covers an already-cancelled old slot (re-armed on rollback) and ensures exhaustion
+     * diagnostics survive subsequent recovery calls. Also tests unresolved failure state.
+     */
+    static void testTransactionExhaustionRollbackConsistency() throws Exception {
+        System.out.println("\n--- Test 2c: Consistent transaction exhaustion rollback & diagnostics preservation ---");
+        TestStorageAdapter storage = new TestStorageAdapter();
+        TestAlarmAdapter alarm = new TestAlarmAdapter();
+        TestClock clock = new TestClock(1700000000000L); // Monday
+
+        TrafficControlScheduler.setStorageAdapter(storage);
+        TrafficControlScheduler.setAlarmAdapter(alarm);
+        TrafficControlScheduler.setClock(clock);
+        TrafficControlDiagnostics.clearScheduleError(null);
+
+        try {
+            long baseTime = clock.currentTimeMillis();
+
+            // 1. Initial retained configuration: slot_A at 07:00, slot_old at 10:00
+            String initialSlots = "[" +
+                "{\"id\":\"slot_A\",\"time\":\"07:00\"}," +
+                "{\"id\":\"slot_old\",\"time\":\"10:00\"}" +
+                "]";
+            storage.putString(TrafficControlScheduler.KEY_SLOTS, initialSlots);
+
+            long initTriggerA = TrafficControlScheduler.nextTrigger("07:00", null, baseTime);
+            alarm.armedAlarms.put("slot_A", initTriggerA);
+
+            // "Also cover an already-cancelled old slot"
+            // slot_old was present in KEY_SLOTS, but was cancelled in AlarmManager before the transaction
+            alarm.cancelledAlarms.add("slot_old");
+            alarm.armedAlarms.remove("slot_old");
+
+            assert alarm.armedAlarms.containsKey("slot_A") : "slot_A must initially be armed";
+            assert !alarm.armedAlarms.containsKey("slot_old") : "slot_old must be in already-cancelled state";
+
+            // 2. Transaction: Change slot_A from 07:00 to 08:00, add slot_B at 09:00 (slot_old omitted)
+            String newTx = "[" +
+                "{\"id\":\"slot_A\",\"time\":\"08:00\"}," +
+                "{\"id\":\"slot_B\",\"time\":\"09:00\"}" +
+                "]";
+
+            // slot_A succeeds in scheduleAll, slot_B fails
+            alarm.failSlots.add("slot_B");
+            boolean scheduleFailed = false;
+            try {
+                TrafficControlScheduler.scheduleAll(null, newTx);
+            } catch (Exception e) {
+                scheduleFailed = true;
+            }
+            assert scheduleFailed : "scheduleAll must fail when slot_B registration fails";
+
+            // Verify: slot_A was successfully changed to 08:00 in AlarmManager!
+            assert alarm.armedAlarms.containsKey("slot_A") : "slot_A must be armed";
+            long triggerA_tx = alarm.armedAlarms.get("slot_A");
+            long expectedA_0800 = TrafficControlScheduler.nextTrigger("08:00", null, baseTime);
+            assert triggerA_tx == expectedA_0800 : "slot_A must be changed to 08:00 during transaction, got: " + triggerA_tx;
+            assert !alarm.armedAlarms.containsKey("slot_B") : "slot_B must not be armed";
+            System.out.println("  ✓ Changed slot_A to 08:00 successfully; slot_B failed and initiated transaction recovery");
+
+            // 3. Make slot_B fail through all 5 retries (1m, 2m, 5m, 15m, 30m)
+            long expectedTxDeadline = baseTime + 60_000L;
+            for (int r = 1; r <= TrafficControlScheduler.MAX_RESCHEDULE_ATTEMPTS; r++) {
+                clock.set(expectedTxDeadline);
+                TrafficControlScheduler.recoverInterruptedSchedule(null);
+
+                if (r < TrafficControlScheduler.MAX_RESCHEDULE_ATTEMPTS) {
+                    JSONObject meta = TrafficControlScheduler.getTxMetadata(null);
+                    assert meta != null && meta.getInt("retryCount") == r : "Transaction retry count must be " + r;
+                    long backoff = TrafficControlScheduler.RETRY_BACKOFF_MS[r];
+                    expectedTxDeadline = clock.currentTimeMillis() + backoff;
+                }
+            }
+            System.out.println("  ✓ slot_B failed through all 5 retries, reaching transaction exhaustion");
+
+            // 4. Verify post-exhaustion rollback consistency:
+            // - Persisted configuration (KEY_SLOTS) retained slot_A (07:00) and slot_old (10:00)
+            String activeSlotsStr = storage.getString(TrafficControlScheduler.KEY_SLOTS, "[]");
+            JSONArray activeSlots = new JSONArray(activeSlotsStr);
+            assert activeSlots.length() == 2 : "KEY_SLOTS must retain exactly 2 slots";
+            assert activeSlots.getJSONObject(0).getString("id").equals("slot_A") && activeSlots.getJSONObject(0).getString("time").equals("07:00");
+            assert activeSlots.getJSONObject(1).getString("id").equals("slot_old") && activeSlots.getJSONObject(1).getString("time").equals("10:00");
+
+            // - KEY_TX_UPDATING and KEY_TX_METADATA cleared
+            assert storage.getString(TrafficControlScheduler.KEY_TX_UPDATING, null) == null :
+                "KEY_TX_UPDATING must be cleared after successful rollback";
+            assert TrafficControlScheduler.getTxMetadata(null) == null :
+                "KEY_TX_METADATA must be cleared after successful rollback";
+
+            // - Registered alarms in AlarmManager must agree with retained KEY_SLOTS:
+            //   * slot_A restored to 07:00 (NOT 08:00!)
+            assert alarm.armedAlarms.containsKey("slot_A") : "slot_A must be armed in AlarmManager";
+            long restoredTriggerA = alarm.armedAlarms.get("slot_A");
+            long expectedA_0700 = TrafficControlScheduler.nextTrigger("07:00", null, clock.currentTimeMillis());
+            assert restoredTriggerA == expectedA_0700 :
+                "slot_A must be restored to 07:00 (" + expectedA_0700 + "), got: " + restoredTriggerA;
+
+            //   * slot_old (which was already-cancelled) restored and re-armed to 10:00
+            assert alarm.armedAlarms.containsKey("slot_old") : "Already-cancelled slot_old must be restored and armed in AlarmManager";
+            long restoredTriggerOld = alarm.armedAlarms.get("slot_old");
+            long expectedOld_1000 = TrafficControlScheduler.nextTrigger("10:00", null, clock.currentTimeMillis());
+            assert restoredTriggerOld == expectedOld_1000 :
+                "slot_old must be restored to 10:00 (" + expectedOld_1000 + "), got: " + restoredTriggerOld;
+
+            //   * slot_B must NOT be armed
+            assert !alarm.armedAlarms.containsKey("slot_B") : "slot_B must NOT be armed in AlarmManager";
+            System.out.println("  ✓ Persisted configuration and registered alarms completely agree after exhaustion: slot_A reverted to 07:00, slot_old restored to 10:00, slot_B cancelled");
+
+            // 5. Verify exhaustion diagnostics survive subsequent recovery calls
+            String exhaustErr = TrafficControlDiagnostics.getLastScheduleError(null);
+            assert exhaustErr != null && exhaustErr.contains("Transaction recovery exhausted after 5 attempts") :
+                "Diagnostics must record exhaustion error, got: " + exhaustErr;
+
+            // Subsequent recovery calls must NOT wipe out exhaustion diagnostics
+            clock.advance(60_000L);
+            TrafficControlScheduler.recoverInterruptedSchedule(null);
+            TrafficControlScheduler.recoverPendingReschedules(null);
+
+            String exhaustErrAfter = TrafficControlDiagnostics.getLastScheduleError(null);
+            assert exhaustErrAfter != null && exhaustErrAfter.contains("Transaction recovery exhausted after 5 attempts") :
+                "Exhaustion diagnostics must survive subsequent recovery calls, got: " + exhaustErrAfter;
+            System.out.println("  ✓ Exhaustion diagnostics survived subsequent recoverInterruptedSchedule and recoverPendingReschedules calls");
+
+            // 6. Test reconciliation failure: if rollback reconciliation fails, retain explicit unresolved state and visible diagnostics
+            alarm.failSlots.clear();
+            TrafficControlDiagnostics.clearScheduleError(null);
+
+            String tx2 = "[" +
+                "{\"id\":\"slot_A\",\"time\":\"08:30\"}," +
+                "{\"id\":\"slot_fail\",\"time\":\"11:00\"}" +
+                "]";
+            alarm.failSlots.add("slot_fail");
+            try {
+                TrafficControlScheduler.scheduleAll(null, tx2);
+            } catch (Exception ignored) {}
+
+            // Now make rollback reconciliation fail by injecting failure when restoring slot_A
+            alarm.failSlots.add("slot_A");
+
+            // Advance through retries to exhaustion
+            long deadline2 = clock.currentTimeMillis() + 60_000L;
+            for (int r = 1; r <= TrafficControlScheduler.MAX_RESCHEDULE_ATTEMPTS; r++) {
+                clock.set(deadline2);
+                TrafficControlScheduler.recoverInterruptedSchedule(null);
+                if (r < TrafficControlScheduler.MAX_RESCHEDULE_ATTEMPTS) {
+                    deadline2 = clock.currentTimeMillis() + TrafficControlScheduler.RETRY_BACKOFF_MS[r];
+                }
+            }
+
+            // Verify: rollback failed -> unresolved state retained!
+            assert storage.getString(TrafficControlScheduler.KEY_TX_UPDATING, null) != null :
+                "KEY_TX_UPDATING must be retained when rollback reconciliation fails";
+            JSONObject failedMeta = TrafficControlScheduler.getTxMetadata(null);
+            assert failedMeta != null : "KEY_TX_METADATA must be retained";
+            assert failedMeta.optBoolean("unresolved", false) : "unresolved flag must be true";
+            assert failedMeta.optBoolean("rollbackFailed", false) : "rollbackFailed flag must be true";
+
+            String rollbackErr = TrafficControlDiagnostics.getLastScheduleError(null);
+            assert rollbackErr != null && rollbackErr.contains("rollback failed") :
+                "Visible diagnostics must report rollback failure, got: " + rollbackErr;
+
+            // Subsequent recovery calls must keep automatic retries bounded and not loop
+            clock.advance(60_000L);
+            TrafficControlScheduler.recoverInterruptedSchedule(null);
+            TrafficControlScheduler.recoverPendingReschedules(null);
+            assert TrafficControlScheduler.getTxMetadata(null).optBoolean("unresolved", false) :
+                "Unresolved state must remain bounded across subsequent calls";
+            System.out.println("  ✓ Rollback failure handled correctly: explicit unresolved state retained, diagnostics recorded, retries bounded");
+
         } finally {
             TrafficControlScheduler.resetAdapters();
         }

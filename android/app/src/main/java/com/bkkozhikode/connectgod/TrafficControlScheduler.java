@@ -288,12 +288,20 @@ public final class TrafficControlScheduler {
         String tx = storageGetString(context, KEY_TX_UPDATING, null);
         if (tx != null && !tx.isEmpty()) {
             JSONObject meta = getTxMetadata(context);
-            long txDeadline = meta != null ? meta.optLong("nextRetryAt", 0L) : 0L;
-            if (txDeadline <= 0) {
-                txDeadline = now() + RETRY_BACKOFF_MS[0];
-            }
-            if (txDeadline > 0 && txDeadline < earliest) {
-                earliest = txDeadline;
+            boolean exhausted = meta != null && (
+                meta.optBoolean("exhausted", false) ||
+                meta.optBoolean("unresolved", false) ||
+                meta.optBoolean("rollbackFailed", false) ||
+                meta.optInt("retryCount", 0) >= MAX_RESCHEDULE_ATTEMPTS
+            );
+            if (!exhausted) {
+                long txDeadline = meta != null ? meta.optLong("nextRetryAt", 0L) : 0L;
+                if (txDeadline <= 0) {
+                    txDeadline = now() + RETRY_BACKOFF_MS[0];
+                }
+                if (txDeadline > 0 && txDeadline < earliest) {
+                    earliest = txDeadline;
+                }
             }
         }
 
@@ -435,6 +443,12 @@ public final class TrafficControlScheduler {
             JSONObject meta = getTxMetadata(context);
             long nextRetryAt = meta != null ? meta.optLong("nextRetryAt", 0L) : 0L;
             int retryCount = meta != null ? meta.optInt("retryCount", meta.optInt("attempts", 0)) : 0;
+            boolean unresolved = meta != null && (meta.optBoolean("unresolved", false) || meta.optBoolean("rollbackFailed", false));
+
+            if (unresolved) {
+                // Already in explicit unresolved failure state. Retain unresolved state, do not loop or claim success.
+                return;
+            }
 
             // Status/claim calls must not bypass transaction backoff.
             if (now < nextRetryAt) {
@@ -481,30 +495,104 @@ public final class TrafficControlScheduler {
 
     private static void handleTxExhaustion(Context context, String errorMsg) {
         Log.w(TAG, "Transaction recovery exhausted after " + MAX_RESCHEDULE_ATTEMPTS + " attempts: " + errorMsg);
-        TrafficControlDiagnostics.recordScheduleError(context, "Transaction recovery exhausted after " + MAX_RESCHEDULE_ATTEMPTS + " attempts. Last error: " + errorMsg);
         TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "TX_RECOVERY_EXHAUSTED", "Exceeded max attempts (" + MAX_RESCHEDULE_ATTEMPTS + ")");
 
         String tx = storageGetString(context, KEY_TX_UPDATING, null);
-        storageRemove(context, KEY_TX_UPDATING);
-        storageRemove(context, KEY_TX_METADATA);
+        String retainedSlotsJson = storageGetString(context, KEY_SLOTS, "[]");
 
-        if (tx != null && !tx.isEmpty()) {
+        boolean rollbackSucceeded = false;
+        String rollbackError = null;
+
+        try {
+            JSONArray txSlots = (tx != null && !tx.isEmpty()) ? new JSONArray(tx) : new JSONArray();
+            JSONArray activeSlots = new JSONArray(retainedSlotsJson);
+
+            Map<String, JSONObject> activeMap = new LinkedHashMap<>();
+            for (int i = 0; i < activeSlots.length(); i++) {
+                JSONObject s = activeSlots.getJSONObject(i);
+                activeMap.put(s.getString("id"), s);
+            }
+
+            Map<String, JSONObject> txMap = new LinkedHashMap<>();
+            for (int i = 0; i < txSlots.length(); i++) {
+                JSONObject s = txSlots.getJSONObject(i);
+                txMap.put(s.getString("id"), s);
+            }
+
+            // 1. Cancel newly added alarms (in tx but not in retained activeMap)
+            for (String txId : txMap.keySet()) {
+                if (!activeMap.containsKey(txId)) {
+                    cancelSlotPending(context, txId);
+                    resetPlayedForSlot(context, txId);
+                    clearPendingReschedule(context, txId);
+                }
+            }
+
+            // 2. Reconcile all retained active slots (modified, removed, and existing):
+            // Restore modified alarms back to retained settings, and re-arm any already-cancelled old slots
+            long now = now();
+            for (Map.Entry<String, JSONObject> entry : activeMap.entrySet()) {
+                String id = entry.getKey();
+                JSONObject slot = entry.getValue();
+                schedule(context, slot);
+                long trigger = nextTrigger(slot.getString("time"), slot.optJSONArray("repeatDays"), now);
+                TrafficControlDiagnostics.recordScheduled(
+                    context,
+                    id,
+                    slot.getString("time"),
+                    slot.optString("slotKey", "hourly_chime"),
+                    slot.optString("title", "Traffic Control"),
+                    trigger
+                );
+                clearPendingReschedule(context, id);
+            }
+
+            rollbackSucceeded = true;
+        } catch (Exception e) {
+            rollbackSucceeded = false;
+            rollbackError = e.getMessage();
+            Log.e(TAG, "Failed to reconcile retained schedule on transaction exhaustion: " + e.getMessage(), e);
+        }
+
+        if (rollbackSucceeded) {
+            storageRemove(context, KEY_TX_UPDATING);
+            storageRemove(context, KEY_TX_METADATA);
+            TrafficControlDiagnostics.recordScheduleError(
+                context,
+                "Transaction recovery exhausted after " + MAX_RESCHEDULE_ATTEMPTS + " attempts. Reverted to previous configuration. Last error: " + errorMsg
+            );
+            TrafficControlDiagnostics.recordEvent(
+                context,
+                "SYSTEM",
+                "TX_ROLLBACK_SUCCESS",
+                "Successfully rolled back and reconciled all alarms to retained configuration"
+            );
+        } else {
+            // Retain explicit unresolved state and visible diagnostics; do not claim successful rollback
             try {
-                JSONArray txSlots = new JSONArray(tx);
-                JSONArray activeSlots = new JSONArray(storageGetString(context, KEY_SLOTS, "[]"));
-                Set<String> activeIds = new HashSet<>();
-                for (int i = 0; i < activeSlots.length(); i++) {
-                    activeIds.add(activeSlots.getJSONObject(i).getString("id"));
-                }
-                for (int i = 0; i < txSlots.length(); i++) {
-                    String txId = txSlots.getJSONObject(i).getString("id");
-                    if (!activeIds.contains(txId)) {
-                        cancelSlotPending(context, txId);
-                        resetPlayedForSlot(context, txId);
-                        clearPendingReschedule(context, txId);
-                    }
-                }
+                JSONObject meta = getTxMetadata(context);
+                if (meta == null) meta = new JSONObject();
+                meta.put("retryCount", MAX_RESCHEDULE_ATTEMPTS);
+                meta.put("attempts", MAX_RESCHEDULE_ATTEMPTS);
+                meta.put("exhausted", true);
+                meta.put("unresolved", true);
+                meta.put("rollbackFailed", true);
+                meta.put("lastAttempt", now());
+                meta.put("nextRetryAt", Long.MAX_VALUE);
+                meta.put("lastError", "Rollback failed: " + rollbackError + " (original error: " + errorMsg + ")");
+                storagePutString(context, KEY_TX_METADATA, meta.toString());
             } catch (Exception ignored) {}
+
+            TrafficControlDiagnostics.recordScheduleError(
+                context,
+                "Transaction recovery exhausted and rollback failed: " + rollbackError + ". Unresolved transaction retained."
+            );
+            TrafficControlDiagnostics.recordEvent(
+                context,
+                "SYSTEM",
+                "TX_ROLLBACK_FAILED",
+                "Rollback failed: " + rollbackError
+            );
         }
 
         scheduleEarliestRecoveryAlarm(context);
@@ -555,7 +643,10 @@ public final class TrafficControlScheduler {
         if (failedCount > 0) {
             TrafficControlDiagnostics.recordScheduleError(context, failedCount + " slots failed to restore. Last error: " + (lastErr != null ? lastErr.getMessage() : ""));
         } else {
-            TrafficControlDiagnostics.clearScheduleError(context);
+            String lastErrStr = TrafficControlDiagnostics.getLastScheduleError(context);
+            if (lastErrStr == null || (!lastErrStr.toLowerCase().contains("exhausted") && !lastErrStr.toLowerCase().contains("unresolved") && !lastErrStr.toLowerCase().contains("rollback"))) {
+                TrafficControlDiagnostics.clearScheduleError(context);
+            }
         }
     }
 
@@ -838,7 +929,10 @@ public final class TrafficControlScheduler {
 
             scheduleEarliestRecoveryAlarm(context, map);
             if (map.length() == 0 && !anyExhausted) {
-                TrafficControlDiagnostics.clearScheduleError(context);
+                String lastErr = TrafficControlDiagnostics.getLastScheduleError(context);
+                if (lastErr == null || (!lastErr.toLowerCase().contains("exhausted") && !lastErr.toLowerCase().contains("unresolved") && !lastErr.toLowerCase().contains("rollback"))) {
+                    TrafficControlDiagnostics.clearScheduleError(context);
+                }
             }
         } catch (Exception e) {
             Log.e(TAG, "Error in recoverPendingReschedules: " + e.getMessage(), e);

@@ -54,8 +54,13 @@ public final class TrafficControlScheduler {
         boolean commit();
     }
 
+    public interface Clock {
+        long currentTimeMillis();
+    }
+
     private static AlarmSchedulerAdapter sAlarmAdapter = null;
     private static StorageAdapter sStorageAdapter = null;
+    private static Clock sClock = null;
 
     public static void setAlarmAdapter(AlarmSchedulerAdapter adapter) {
         sAlarmAdapter = adapter;
@@ -63,6 +68,19 @@ public final class TrafficControlScheduler {
 
     public static void setStorageAdapter(StorageAdapter adapter) {
         sStorageAdapter = adapter;
+    }
+
+    public static void setClock(Clock clock) {
+        sClock = clock;
+    }
+
+    public static Clock getClock() {
+        return sClock;
+    }
+
+    public static long now() {
+        if (sClock != null) return sClock.currentTimeMillis();
+        return System.currentTimeMillis();
     }
 
     public static StorageAdapter getStorageAdapter() {
@@ -76,6 +94,7 @@ public final class TrafficControlScheduler {
     public static void resetAdapters() {
         sAlarmAdapter = null;
         sStorageAdapter = null;
+        sClock = null;
     }
 
     public static SharedPreferences preferences(Context context) {
@@ -198,9 +217,40 @@ public final class TrafficControlScheduler {
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
             alarmSetExactAndAllowWhileIdle(context, triggerAtMillis, pi);
-            Log.i(TAG, "Scheduled independent recovery alarm in " + Math.max(0, (triggerAtMillis - System.currentTimeMillis()) / 1000) + "s");
+            Log.i(TAG, "Scheduled independent recovery alarm in " + Math.max(0, (triggerAtMillis - now()) / 1000) + "s");
         } catch (Exception e) {
             Log.e(TAG, "Failed to schedule recovery alarm: " + e.getMessage(), e);
+        }
+    }
+
+    public static void scheduleEarliestRecoveryAlarm(Context context, JSONObject pendingMap) {
+        long earliest = Long.MAX_VALUE;
+        if (pendingMap != null) {
+            Iterator<String> it = pendingMap.keys();
+            while (it.hasNext()) {
+                String key = it.next();
+                JSONObject r = pendingMap.optJSONObject(key);
+                if (r != null) {
+                    long deadline = r.optLong("nextRetryAt", 0L);
+                    if (deadline > 0 && deadline < earliest) {
+                        earliest = deadline;
+                    }
+                }
+            }
+        }
+
+        String tx = storageGetString(context, KEY_TX_UPDATING, null);
+        if (tx != null && !tx.isEmpty()) {
+            long txDeadline = now() + RETRY_BACKOFF_MS[0];
+            if (txDeadline < earliest) {
+                earliest = txDeadline;
+            }
+        }
+
+        if (earliest != Long.MAX_VALUE) {
+            scheduleRecoveryAlarm(context, earliest);
+        } else {
+            cancelRecoveryAlarm(context);
         }
     }
 
@@ -240,7 +290,7 @@ public final class TrafficControlScheduler {
             if (!time.matches("([01][0-9]|2[0-3]):[0-5][0-9]")) {
                 throw new IllegalArgumentException("Invalid alarm time: " + time);
             }
-            nextTrigger(time, slot.optJSONArray("repeatDays"), System.currentTimeMillis());
+            nextTrigger(time, slot.optJSONArray("repeatDays"), now());
         }
 
         // 2. Check permission if any alarms are configured
@@ -272,7 +322,7 @@ public final class TrafficControlScheduler {
 
         try {
             // Stage 2: Arm new and modified slots first without cancelling unchanged alarms
-            long now = System.currentTimeMillis();
+            long now = now();
             for (Map.Entry<String, JSONObject> entry : newMap.entrySet()) {
                 String id = entry.getKey();
                 JSONObject newSlot = entry.getValue();
@@ -310,6 +360,7 @@ public final class TrafficControlScheduler {
         } catch (Exception e) {
             Log.e(TAG, "Failed to schedule native alarms: " + e.getMessage(), e);
             TrafficControlDiagnostics.recordScheduleError(context, e.getMessage());
+            scheduleRecoveryAlarm(context, now() + RETRY_BACKOFF_MS[0]);
             throw e;
         }
     }
@@ -324,6 +375,7 @@ public final class TrafficControlScheduler {
             }
         } catch (Exception e) {
             Log.e(TAG, "Failed to recover interrupted schedule: " + e.getMessage(), e);
+            scheduleRecoveryAlarm(context, now() + RETRY_BACKOFF_MS[0]);
         }
     }
 
@@ -343,7 +395,7 @@ public final class TrafficControlScheduler {
                 JSONObject slot = slots.getJSONObject(i);
                 slotId = slot.optString("id", "slot_" + i);
                 schedule(context, slot);
-                long trigger = nextTrigger(slot.getString("time"), slot.optJSONArray("repeatDays"), System.currentTimeMillis());
+                long trigger = nextTrigger(slot.getString("time"), slot.optJSONArray("repeatDays"), now());
                 TrafficControlDiagnostics.recordScheduled(
                     context,
                     slotId,
@@ -381,7 +433,7 @@ public final class TrafficControlScheduler {
 
     public static void schedule(Context context, JSONObject slot) throws Exception {
         String id = slot.getString("id");
-        long now = System.currentTimeMillis();
+        long now = now();
         // A clock rollback must not replay the same slot on the same local day.
         long trigger = nextTrigger(slot.getString("time"), slot.optJSONArray("repeatDays"), now);
         if (dayKey(trigger).equals(storageGetString(context, "played:" + id, ""))) {
@@ -413,7 +465,7 @@ public final class TrafficControlScheduler {
     public static synchronized JSONObject claim(Context context, Intent intent) throws Exception {
         if (intent == null) return null;
         String id = intent.getStringExtra("id");
-        long triggerTime = intent.getLongExtra("trigger", System.currentTimeMillis());
+        long triggerTime = intent.getLongExtra("trigger", now());
         return claim(context, id, triggerTime);
     }
 
@@ -423,34 +475,37 @@ public final class TrafficControlScheduler {
         // Ensure any interrupted schedule transaction is made consistent
         recoverInterruptedSchedule(context);
 
-        // Load slots from active configuration
-        JSONArray slots = new JSONArray(storageGetString(context, KEY_SLOTS, "[]"));
+        // Load target slot: check in-flight transaction (KEY_TX_UPDATING) first if pending,
+        // so modified configurations take precedence over stale active slots.
+        String tx = storageGetString(context, KEY_TX_UPDATING, null);
         JSONObject targetSlot = null;
-        for (int i = 0; i < slots.length(); i++) {
-            JSONObject slot = slots.getJSONObject(i);
-            if (id.equals(slot.getString("id"))) {
-                targetSlot = slot;
-                break;
+        if (tx != null && !tx.isEmpty()) {
+            JSONArray txSlots = new JSONArray(tx);
+            for (int i = 0; i < txSlots.length(); i++) {
+                JSONObject slot = txSlots.getJSONObject(i);
+                if (id.equals(slot.getString("id"))) {
+                    targetSlot = slot;
+                    TrafficControlDiagnostics.recordEvent(context, id, "TX_SLOT_CLAIMED", "Claimed in-flight transaction slot while transaction remains pending reconciliation");
+                    break;
+                }
             }
         }
 
-        // If not found in active slots, check in-flight transaction (KEY_TX_UPDATING).
-        // Newly armed alarms from an interrupted update MUST NOT be silently discarded!
         if (targetSlot == null) {
-            String tx = storageGetString(context, KEY_TX_UPDATING, null);
-            if (tx != null && !tx.isEmpty()) {
-                JSONArray txSlots = new JSONArray(tx);
-                for (int i = 0; i < txSlots.length(); i++) {
-                    JSONObject slot = txSlots.getJSONObject(i);
-                    if (id.equals(slot.getString("id"))) {
-                        targetSlot = slot;
-                        // Promote in-flight transaction to active schedule immediately
-                        if (!storageCommitTx(context, KEY_SLOTS, tx, KEY_TX_UPDATING)) {
-                            throw new IllegalStateException("Failed to commit promoted transaction to storage");
-                        }
-                        TrafficControlDiagnostics.recordEvent(context, id, "TX_SLOT_PROMOTED", "Promoted in-flight transaction slot to active schedule");
-                        break;
+            JSONArray slots = new JSONArray(storageGetString(context, KEY_SLOTS, "[]"));
+            for (int i = 0; i < slots.length(); i++) {
+                JSONObject slot = slots.getJSONObject(i);
+                if (id.equals(slot.getString("id"))) {
+                    // If a pending transaction exists and omitted this slot, it was removed!
+                    if (tx != null && !tx.isEmpty()) {
+                        Log.i(TAG, "Slot " + id + " was removed in pending transaction. Cancelling.");
+                        cancelSlotPending(context, id);
+                        resetPlayedForSlot(context, id);
+                        clearPendingReschedule(context, id);
+                        return null;
                     }
+                    targetSlot = slot;
+                    break;
                 }
             }
         }
@@ -477,7 +532,7 @@ public final class TrafficControlScheduler {
         // Reschedule tomorrow's alarm in an isolated try-catch so failures do NOT abort today's playback
         try {
             schedule(context, slot);
-            long nextTrigger = nextTrigger(slot.getString("time"), slot.optJSONArray("repeatDays"), System.currentTimeMillis());
+            long nextTrigger = nextTrigger(slot.getString("time"), slot.optJSONArray("repeatDays"), now());
             TrafficControlDiagnostics.recordNextScheduled(context, id, nextTrigger);
             clearPendingReschedule(context, id);
         } catch (Exception rescheduleErr) {
@@ -495,31 +550,28 @@ public final class TrafficControlScheduler {
             String raw = storageGetString(context, KEY_PENDING_RESCHEDULES, "{}");
             JSONObject map = new JSONObject(raw);
             JSONObject rec = map.optJSONObject(slotId);
-            long now = System.currentTimeMillis();
-            int attemptCount;
+            long now = now();
             if (rec == null) {
                 rec = new JSONObject();
-                rec.put("attempts", 1);
+                rec.put("initialFailed", now);
                 rec.put("firstFailed", now);
+                rec.put("retryCount", 0);
+                rec.put("attempts", 0);
                 rec.put("lastAttempt", now);
-                attemptCount = 1;
-            } else {
-                attemptCount = rec.optInt("attempts", 1) + 1;
-                rec.put("attempts", attemptCount);
-                rec.put("lastAttempt", now);
+                long nextRetryAt = now + RETRY_BACKOFF_MS[0];
+                rec.put("nextRetryAt", nextRetryAt);
+            } else if (!rec.has("nextRetryAt")) {
+                int retryCount = rec.optInt("retryCount", rec.optInt("attempts", 0));
+                int backoffIdx = Math.min(retryCount, RETRY_BACKOFF_MS.length - 1);
+                rec.put("nextRetryAt", now + RETRY_BACKOFF_MS[backoffIdx]);
             }
             map.put(slotId, rec);
             if (!storagePutString(context, KEY_PENDING_RESCHEDULES, map.toString())) {
                 throw new IllegalStateException("Failed to commit pending reschedule to storage");
             }
 
-            if (attemptCount <= MAX_RESCHEDULE_ATTEMPTS) {
-                long backoff = RETRY_BACKOFF_MS[Math.min(attemptCount - 1, RETRY_BACKOFF_MS.length - 1)];
-                scheduleRecoveryAlarm(context, now + backoff);
-            } else {
-                TrafficControlDiagnostics.recordScheduleError(context, "Recovery exhausted for slot " + slotId + " after " + attemptCount + " attempts.");
-                TrafficControlDiagnostics.recordEvent(context, slotId, "RECOVERY_EXHAUSTED", "Exceeded max attempts (" + MAX_RESCHEDULE_ATTEMPTS + ")");
-            }
+            // Schedule the shared recovery alarm for the earliest pending deadline
+            scheduleEarliestRecoveryAlarm(context, map);
         } catch (Exception e) {
             Log.e(TAG, "Error recording pending reschedule for " + slotId, e);
         }
@@ -532,6 +584,7 @@ public final class TrafficControlScheduler {
             if (map.has(slotId)) {
                 map.remove(slotId);
                 storagePutString(context, KEY_PENDING_RESCHEDULES, map.toString());
+                scheduleEarliestRecoveryAlarm(context, map);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error clearing pending reschedule for " + slotId, e);
@@ -544,7 +597,7 @@ public final class TrafficControlScheduler {
             String raw = storageGetString(context, KEY_PENDING_RESCHEDULES, "{}");
             JSONObject map = new JSONObject(raw);
             if (map.length() == 0) {
-                cancelRecoveryAlarm(context);
+                scheduleEarliestRecoveryAlarm(context, map);
                 return;
             }
 
@@ -554,27 +607,47 @@ public final class TrafficControlScheduler {
                 JSONObject s = slots.getJSONObject(i);
                 slotMap.put(s.getString("id"), s);
             }
+            String tx = storageGetString(context, KEY_TX_UPDATING, null);
+            if (tx != null && !tx.isEmpty()) {
+                JSONArray txSlots = new JSONArray(tx);
+                for (int i = 0; i < txSlots.length(); i++) {
+                    JSONObject s = txSlots.getJSONObject(i);
+                    if (!slotMap.containsKey(s.getString("id"))) {
+                        slotMap.put(s.getString("id"), s);
+                    }
+                }
+            }
 
             Iterator<String> keys = map.keys();
             List<String> toRemove = new ArrayList<>();
-            long now = System.currentTimeMillis();
+            long now = now();
             long nextMinRetryTime = Long.MAX_VALUE;
             boolean anyExhausted = false;
 
             while (keys.hasNext()) {
                 String id = keys.next();
                 JSONObject record = map.getJSONObject(id);
-                int attempts = record.optInt("attempts", 0);
+                int retryCount = record.optInt("retryCount", record.optInt("attempts", 0));
+                long nextRetryAt = record.optLong("nextRetryAt", 0L);
 
                 if (!slotMap.containsKey(id)) {
                     toRemove.add(id);
                     continue;
                 }
 
-                if (attempts >= MAX_RESCHEDULE_ATTEMPTS) {
+                // Every recovery entry point must respect nextRetryAt;
+                // status queries and service destruction must not consume retries early.
+                if (now < nextRetryAt) {
+                    if (nextRetryAt < nextMinRetryTime) {
+                        nextMinRetryTime = nextRetryAt;
+                    }
+                    continue;
+                }
+
+                if (retryCount >= MAX_RESCHEDULE_ATTEMPTS) {
                     Log.w(TAG, "Slot " + id + " exceeded max reschedule attempts (" + MAX_RESCHEDULE_ATTEMPTS + ")");
                     TrafficControlDiagnostics.recordScheduleError(context, "Recovery exhausted for slot " + id + " after " + MAX_RESCHEDULE_ATTEMPTS + " attempts.");
-                    TrafficControlDiagnostics.recordEvent(context, id, "RECOVERY_EXHAUSTED", "Exceeded " + MAX_RESCHEDULE_ATTEMPTS + " attempts");
+                    TrafficControlDiagnostics.recordEvent(context, id, "RECOVERY_EXHAUSTED", "Exceeded max attempts (" + MAX_RESCHEDULE_ATTEMPTS + ")");
                     toRemove.add(id);
                     anyExhausted = true;
                     continue;
@@ -589,21 +662,26 @@ public final class TrafficControlScheduler {
                         nextTrigger = nextTrigger(slot.getString("time"), slot.optJSONArray("repeatDays"), nextTrigger);
                     }
                     TrafficControlDiagnostics.recordNextScheduled(context, id, nextTrigger);
-                    TrafficControlDiagnostics.recordEvent(context, id, "NEXT_OCCURRENCE_RECOVERED", "Rescheduled after attempt " + attempts);
+                    TrafficControlDiagnostics.recordEvent(context, id, "NEXT_OCCURRENCE_RECOVERED", "Rescheduled after retry " + retryCount);
                     toRemove.add(id);
                 } catch (Exception e) {
-                    int nextAttempt = attempts + 1;
-                    record.put("attempts", nextAttempt);
+                    int nextRetry = retryCount + 1;
+                    record.put("retryCount", nextRetry);
+                    record.put("attempts", nextRetry);
                     record.put("lastAttempt", now);
                     record.put("lastError", e.getMessage());
-                    Log.w(TAG, "Recovery attempt " + nextAttempt + " failed for " + id + ": " + e.getMessage());
-                    if (nextAttempt < MAX_RESCHEDULE_ATTEMPTS) {
-                        long backoff = RETRY_BACKOFF_MS[Math.min(nextAttempt - 1, RETRY_BACKOFF_MS.length - 1)];
+                    Log.w(TAG, "Recovery retry " + nextRetry + " failed for " + id + ": " + e.getMessage());
+
+                    if (nextRetry < MAX_RESCHEDULE_ATTEMPTS) {
+                        long backoff = RETRY_BACKOFF_MS[nextRetry];
                         long retryAt = now + backoff;
-                        if (retryAt < nextMinRetryTime) nextMinRetryTime = retryAt;
+                        record.put("nextRetryAt", retryAt);
+                        if (retryAt < nextMinRetryTime) {
+                            nextMinRetryTime = retryAt;
+                        }
                     } else {
                         TrafficControlDiagnostics.recordScheduleError(context, "Recovery exhausted for slot " + id + " after " + MAX_RESCHEDULE_ATTEMPTS + " attempts.");
-                        TrafficControlDiagnostics.recordEvent(context, id, "RECOVERY_EXHAUSTED", "Exceeded " + MAX_RESCHEDULE_ATTEMPTS + " attempts");
+                        TrafficControlDiagnostics.recordEvent(context, id, "RECOVERY_EXHAUSTED", "Exceeded max attempts (" + MAX_RESCHEDULE_ATTEMPTS + ")");
                         toRemove.add(id);
                         anyExhausted = true;
                     }
@@ -618,13 +696,9 @@ public final class TrafficControlScheduler {
                 throw new IllegalStateException("Failed to persist updated pending reschedules");
             }
 
-            if (map.length() > 0 && nextMinRetryTime != Long.MAX_VALUE) {
-                scheduleRecoveryAlarm(context, nextMinRetryTime);
-            } else {
-                cancelRecoveryAlarm(context);
-                if (!anyExhausted) {
-                    TrafficControlDiagnostics.clearScheduleError(context);
-                }
+            scheduleEarliestRecoveryAlarm(context, map);
+            if (map.length() == 0 && !anyExhausted) {
+                TrafficControlDiagnostics.clearScheduleError(context);
             }
         } catch (Exception e) {
             Log.e(TAG, "Error in recoverPendingReschedules: " + e.getMessage(), e);

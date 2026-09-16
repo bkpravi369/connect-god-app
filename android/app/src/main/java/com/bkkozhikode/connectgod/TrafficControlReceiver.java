@@ -25,6 +25,7 @@ public class TrafficControlReceiver extends BroadcastReceiver {
                 wakeLock.acquire(15000); // 15s hold
             }
             try {
+                TrafficControlScheduler.recoverInterruptedSchedule(context);
                 TrafficControlScheduler.recoverPendingReschedules(context);
             } finally {
                 if (wakeLock != null && wakeLock.isHeld()) {

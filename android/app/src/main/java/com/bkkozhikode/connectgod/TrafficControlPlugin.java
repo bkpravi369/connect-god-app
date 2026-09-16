@@ -58,6 +58,8 @@ public class TrafficControlPlugin extends Plugin {
         } catch (Exception ignored) {}
         result.put("nativeVersionCode", vCode);
         result.put("nativeVersionName", vName);
+        TrafficControlScheduler.recoverInterruptedSchedule(getContext());
+        TrafficControlScheduler.recoverPendingReschedules(getContext());
         String lastError = TrafficControlDiagnostics.getLastScheduleError(getContext());
         result.put("lastScheduleError", lastError != null ? lastError : "");
         call.resolve(result);
@@ -234,42 +236,50 @@ public class TrafficControlPlugin extends Plugin {
 
     @PluginMethod
     public void pickCustomAudio(PluginCall call) {
+        String[] mimeTypes = new String[]{
+            "audio/*",
+            "audio/mpeg",
+            "audio/mp3",
+            "audio/wav",
+            "audio/x-wav",
+            "audio/ogg",
+            "audio/m4a",
+            "audio/aac",
+            "application/ogg"
+        };
+
+        // 1. Prepare primary intent: ACTION_OPEN_DOCUMENT
+        Intent openDocIntent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        openDocIntent.addCategory(Intent.CATEGORY_OPENABLE);
+        openDocIntent.setType("audio/*");
+        openDocIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        openDocIntent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+        Intent primaryChooser = Intent.createChooser(openDocIntent, "Select Alarm Audio File");
+
         try {
-            String[] mimeTypes = new String[]{
-                "audio/*",
-                "audio/mpeg",
-                "audio/mp3",
-                "audio/wav",
-                "audio/x-wav",
-                "audio/ogg",
-                "audio/m4a",
-                "audio/aac",
-                "application/ogg"
-            };
+            TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_LAUNCHED", "Attempting ACTION_OPEN_DOCUMENT");
+            startActivityForResult(call, primaryChooser, "pickCustomAudioResult");
+            return;
+        } catch (Exception primaryEx) {
+            Log.w(TAG, "ACTION_OPEN_DOCUMENT launch failed, attempting ACTION_GET_CONTENT fallback: " + primaryEx.getMessage());
+            TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_FALLBACK", "Primary launch failed: " + primaryEx.getMessage());
+        }
 
-            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(Intent.CATEGORY_OPENABLE);
-            intent.setType("audio/*");
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-            intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+        // 2. Prepare secondary fallback intent: ACTION_GET_CONTENT
+        try {
+            Intent getContentIntent = new Intent(Intent.ACTION_GET_CONTENT);
+            getContentIntent.addCategory(Intent.CATEGORY_OPENABLE);
+            getContentIntent.setType("audio/*");
+            getContentIntent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+            getContentIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            Intent fallbackChooser = Intent.createChooser(getContentIntent, "Select Alarm Audio File");
 
-            PackageManager pm = getContext().getPackageManager();
-            if (intent.resolveActivity(pm) == null) {
-                // Fallback to ACTION_GET_CONTENT for devices without document provider
-                intent = new Intent(Intent.ACTION_GET_CONTENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("audio/*");
-                intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            }
-
-            Intent chooser = Intent.createChooser(intent, "Select Alarm Audio File");
-            TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_LAUNCHED", "Audio picker opened");
-            startActivityForResult(call, chooser, "pickCustomAudioResult");
-        } catch (Exception e) {
-            Log.e(TAG, "Error launching file picker: " + e.getMessage(), e);
-            TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_ERROR", "Launch failed: " + e.getMessage());
-            call.reject("Failed to open audio file picker: " + e.getMessage());
+            TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_LAUNCHED", "Attempting ACTION_GET_CONTENT fallback");
+            startActivityForResult(call, fallbackChooser, "pickCustomAudioResult");
+        } catch (Exception fallbackEx) {
+            Log.e(TAG, "All audio picker intents failed to launch: " + fallbackEx.getMessage(), fallbackEx);
+            TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_ERROR", "All launch attempts failed: " + fallbackEx.getMessage());
+            call.reject("Failed to open audio file picker: " + fallbackEx.getMessage());
         }
     }
 

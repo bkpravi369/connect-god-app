@@ -519,6 +519,10 @@ public class TrafficControlAudioService extends Service {
                 wakeLock.release();
             } catch (Exception ignored) {}
         }
+
+        try {
+            TrafficControlScheduler.recoverPendingReschedules(getApplicationContext());
+        } catch (Exception ignored) {}
     }
 
     @Nullable

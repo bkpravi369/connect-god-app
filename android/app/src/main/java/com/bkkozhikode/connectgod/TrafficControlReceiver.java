@@ -16,6 +16,26 @@ public class TrafficControlReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        if (intent != null && TrafficControlScheduler.ACTION_RECOVER_SCHEDULE.equals(intent.getAction())) {
+            Log.i(TAG, "Traffic Control recovery alarm triggered");
+            PowerManager pm = context != null ? (PowerManager) context.getSystemService(Context.POWER_SERVICE) : null;
+            PowerManager.WakeLock wakeLock = null;
+            if (pm != null) {
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ConnectGod:TrafficRecoveryWakeLock");
+                wakeLock.acquire(15000); // 15s hold
+            }
+            try {
+                TrafficControlScheduler.recoverPendingReschedules(context);
+            } finally {
+                if (wakeLock != null && wakeLock.isHeld()) {
+                    try {
+                        wakeLock.release();
+                    } catch (Exception ignored) {}
+                }
+            }
+            return;
+        }
+
         String slotId = intent != null ? intent.getStringExtra("id") : null;
         long triggerTime = intent != null ? intent.getLongExtra("trigger", System.currentTimeMillis()) : System.currentTimeMillis();
         long now = System.currentTimeMillis();

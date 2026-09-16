@@ -40,6 +40,39 @@ public class TrafficControlPlugin extends Plugin {
     private static final String TAG = "TrafficControlPlugin";
     private MediaPlayer previewPlayer = null;
 
+    public interface ActivityLauncher {
+        void startActivityForResult(PluginCall call, Intent intent, String callbackName);
+    }
+
+    private ActivityLauncher activityLauncher = new ActivityLauncher() {
+        @Override
+        public void startActivityForResult(PluginCall call, Intent intent, String callbackName) {
+            TrafficControlPlugin.super.startActivityForResult(call, intent, callbackName);
+        }
+    };
+
+    public void setActivityLauncher(ActivityLauncher launcher) {
+        this.activityLauncher = launcher;
+    }
+
+    public void resetActivityLauncher() {
+        this.activityLauncher = new ActivityLauncher() {
+            @Override
+            public void startActivityForResult(PluginCall call, Intent intent, String callbackName) {
+                TrafficControlPlugin.super.startActivityForResult(call, intent, callbackName);
+            }
+        };
+    }
+
+    @Override
+    public Context getContext() {
+        try {
+            return super.getContext();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     @PluginMethod
     public void getAlarmStatus(PluginCall call) {
         JSObject result = new JSObject();
@@ -258,7 +291,7 @@ public class TrafficControlPlugin extends Plugin {
 
         try {
             TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_LAUNCHED", "Attempting ACTION_OPEN_DOCUMENT");
-            startActivityForResult(call, primaryChooser, "pickCustomAudioResult");
+            activityLauncher.startActivityForResult(call, primaryChooser, "pickCustomAudioResult");
             return;
         } catch (Exception primaryEx) {
             Log.w(TAG, "ACTION_OPEN_DOCUMENT launch failed, attempting ACTION_GET_CONTENT fallback: " + primaryEx.getMessage());
@@ -275,7 +308,7 @@ public class TrafficControlPlugin extends Plugin {
             Intent fallbackChooser = Intent.createChooser(getContentIntent, "Select Alarm Audio File");
 
             TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_LAUNCHED", "Attempting ACTION_GET_CONTENT fallback");
-            startActivityForResult(call, fallbackChooser, "pickCustomAudioResult");
+            activityLauncher.startActivityForResult(call, fallbackChooser, "pickCustomAudioResult");
         } catch (Exception fallbackEx) {
             Log.e(TAG, "All audio picker intents failed to launch: " + fallbackEx.getMessage(), fallbackEx);
             TrafficControlDiagnostics.recordEvent(getContext(), "SYSTEM", "AUDIO_PICKER_ERROR", "All launch attempts failed: " + fallbackEx.getMessage());

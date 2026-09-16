@@ -18,6 +18,7 @@ public final class TrafficControlDiagnostics {
     private static final int MAX_EVENTS = 60;
 
     private static SharedPreferences prefs(Context context) {
+        if (context == null) return null;
         if (Build.VERSION.SDK_INT >= 24) {
             context = context.createDeviceProtectedStorageContext();
         }
@@ -31,8 +32,10 @@ public final class TrafficControlDiagnostics {
     }
 
     public static synchronized void recordEvent(Context context, String slotId, String event, String details) {
+        if (context == null) return;
         try {
             SharedPreferences p = prefs(context);
+            if (p == null) return;
             JSONArray events = new JSONArray(p.getString("events", "[]"));
             JSONObject item = new JSONObject();
             long now = System.currentTimeMillis();
@@ -54,6 +57,7 @@ public final class TrafficControlDiagnostics {
     }
 
     public static synchronized void recordScheduled(Context context, String id, String time, String slotKey, String title, long triggerMillis) {
+        if (context == null) return;
         try {
             SharedPreferences p = prefs(context);
             JSONObject slot = getSlotRecord(context, id);
@@ -155,6 +159,7 @@ public final class TrafficControlDiagnostics {
     }
 
     public static synchronized void recordNextScheduled(Context context, String id, long nextMillis) {
+        if (context == null) return;
         try {
             JSONObject slot = getSlotRecord(context, id);
             slot.put("nextScheduledAt", nextMillis);
@@ -168,16 +173,39 @@ public final class TrafficControlDiagnostics {
     }
 
     public static synchronized void recordScheduleError(Context context, String error) {
-        prefs(context).edit().putString("last_schedule_error", error).apply();
+        if (context == null) {
+            TrafficControlScheduler.StorageAdapter sa = TrafficControlScheduler.getStorageAdapter();
+            if (sa != null) {
+                sa.putString("last_schedule_error", error);
+                sa.commit();
+            }
+            return;
+        }
+        SharedPreferences p = prefs(context);
+        if (p != null) p.edit().putString("last_schedule_error", error).apply();
         recordEvent(context, "SYSTEM", "SCHEDULE_ERROR", error);
     }
 
     public static synchronized void clearScheduleError(Context context) {
-        prefs(context).edit().remove("last_schedule_error").apply();
+        if (context == null) {
+            TrafficControlScheduler.StorageAdapter sa = TrafficControlScheduler.getStorageAdapter();
+            if (sa != null) {
+                sa.remove("last_schedule_error");
+                sa.commit();
+            }
+            return;
+        }
+        SharedPreferences p = prefs(context);
+        if (p != null) p.edit().remove("last_schedule_error").apply();
     }
 
     public static synchronized String getLastScheduleError(Context context) {
-        return prefs(context).getString("last_schedule_error", null);
+        if (context == null) {
+            TrafficControlScheduler.StorageAdapter sa = TrafficControlScheduler.getStorageAdapter();
+            return sa != null ? sa.getString("last_schedule_error", null) : null;
+        }
+        SharedPreferences p = prefs(context);
+        return p != null ? p.getString("last_schedule_error", null) : null;
     }
 
     private static JSONObject getSlotRecord(Context context, String id) {

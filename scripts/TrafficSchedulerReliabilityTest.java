@@ -120,6 +120,7 @@ public class TrafficSchedulerReliabilityTest {
 
         testNextOccurrenceFailureAndBoundedRecovery();
         testInterruptedScheduleTransactionsAndReceiverLookup();
+        testCombinedTransactionAndPendingSlotRecovery();
         testStorageFailureHandling();
         testPerSlotRebootRestorationIsolation();
         testProductionCalendarCalculations();
@@ -355,6 +356,9 @@ public class TrafficSchedulerReliabilityTest {
             // Now slot_2 unblocks (e.g. AlarmManager condition clears) without reopening the app
             alarm.failSlots.remove("slot_2");
 
+            // Advance clock to scheduled recovery alarm deadline (+1m)
+            clock.advance(60_000L);
+
             // Background recovery runs (e.g. via recovery alarm or receiver entry point)
             TrafficControlScheduler.recoverInterruptedSchedule(null);
 
@@ -403,8 +407,9 @@ public class TrafficSchedulerReliabilityTest {
             assert claimedRemoved == null : "claim() must return null for slot removed in pending transaction";
             assert alarm.cancelledAlarms.contains("slot_2") : "Removed slot_2 must be cancelled in AlarmManager";
 
-            // Now slot_3 unblocks; run reconciliation
+            // Now slot_3 unblocks; advance clock to transaction retry deadline and run reconciliation
             alarm.failSlots.remove("slot_3");
+            clock.advance(2 * 60_000L);
             TrafficControlScheduler.recoverInterruptedSchedule(null);
 
             // Verify final state:
@@ -424,6 +429,165 @@ public class TrafficSchedulerReliabilityTest {
                 "KEY_TX_UPDATING must be cleared after complete reconciliation";
             System.out.println("  ✓ Modified and removed slots reconciled correctly upon successful completion");
 
+        } finally {
+            TrafficControlScheduler.resetAdapters();
+        }
+    }
+
+    /**
+     * Test 2b: Combined pending transaction with pending slot recovery:
+     * - Modified alarm time authoritative precedence
+     * - Removed alarm cancelled and not re-armed
+     * - Repeated status queries before deadline respecting backoff
+     * - Transaction bounded retries and exhaustion
+     */
+    static void testCombinedTransactionAndPendingSlotRecovery() throws Exception {
+        System.out.println("\n--- Test 2b: Combined pending transaction & pending slot recovery ---");
+        TestStorageAdapter storage = new TestStorageAdapter();
+        TestAlarmAdapter alarm = new TestAlarmAdapter();
+        long baseTime = 1_800_000_000_000L;
+        TestClock clock = new TestClock(baseTime);
+
+        TrafficControlScheduler.setStorageAdapter(storage);
+        TrafficControlScheduler.setAlarmAdapter(alarm);
+        TrafficControlScheduler.setClock(clock);
+
+        try {
+            // 1. Initial active schedule in KEY_SLOTS: slot_A (07:00) and slot_B (08:00)
+            String slotA_old = "{\"id\":\"slot_A\",\"time\":\"07:00\",\"title\":\"Slot A\"}";
+            String slotB_old = "{\"id\":\"slot_B\",\"time\":\"08:00\",\"title\":\"Slot B\"}";
+            storage.putString(TrafficControlScheduler.KEY_SLOTS, "[" + slotA_old + "," + slotB_old + "]");
+            alarm.armedAlarms.put("slot_A", 12345L);
+            alarm.armedAlarms.put("slot_B", 23456L);
+
+            // Both slot_A and slot_B have pending reschedules
+            // slot_A has nextRetryAt at baseTime + 60s
+            // slot_B has nextRetryAt at baseTime + 120s
+            JSONObject pendingMap = new JSONObject();
+            JSONObject recA = new JSONObject()
+                .put("retryCount", 0)
+                .put("attempts", 0)
+                .put("nextRetryAt", baseTime + 60_000L);
+            JSONObject recB = new JSONObject()
+                .put("retryCount", 1)
+                .put("attempts", 1)
+                .put("nextRetryAt", baseTime + 120_000L);
+            pendingMap.put("slot_A", recA);
+            pendingMap.put("slot_B", recB);
+            storage.putString(TrafficControlScheduler.KEY_PENDING_RESCHEDULES, pendingMap.toString());
+
+            // 2. User updates schedule via scheduleAll:
+            // - slot_A modified (time 07:30)
+            // - slot_B removed (omitted)
+            // - slot_C added (time 09:00), fails registration
+            String slotA_new = "{\"id\":\"slot_A\",\"time\":\"07:30\",\"title\":\"Slot A Modified\"}";
+            String slotC_new = "{\"id\":\"slot_C\",\"time\":\"09:00\",\"title\":\"Slot C\"}";
+            String updateTx = "[" + slotA_new + "," + slotC_new + "]";
+
+            alarm.failSlots.add("slot_C");
+            boolean txFailed = false;
+            try {
+                TrafficControlScheduler.scheduleAll(null, updateTx);
+            } catch (Exception e) {
+                txFailed = true;
+            }
+            assert txFailed : "scheduleAll must fail when slot_C registration fails";
+            assert storage.getString(TrafficControlScheduler.KEY_TX_UPDATING, null) != null : "KEY_TX_UPDATING must be set";
+
+            // Verify initial transaction failure metadata
+            JSONObject txMeta = TrafficControlScheduler.getTxMetadata(null);
+            assert txMeta != null : "KEY_TX_METADATA must be persisted on initial failure";
+            assert txMeta.getInt("retryCount") == 0 : "Transaction initial failure must have retryCount = 0";
+            long expectedTxRetry1At = baseTime + 60_000L;
+            assert txMeta.getLong("nextRetryAt") == expectedTxRetry1At : "Transaction nextRetryAt must be baseTime + 1m";
+
+            // Verify shared recovery alarm is scheduled for earliest persisted deadline (slot_A and tx both at baseTime + 60s)
+            long recoveryAlarmTime = alarm.recoveryAlarms.get(alarm.recoveryAlarms.size() - 1);
+            assert recoveryAlarmTime == baseTime + 60_000L : "Shared recovery alarm must be scheduled for earliest deadline (baseTime + 1m)";
+            System.out.println("  ✓ Pending transaction created with initial failure (retryCount=0, nextRetryAt=1m) and shared recovery alarm");
+
+            // 3. Repeated status calls before deadline (t = 10s, 30s, 50s)
+            for (long offset : new long[]{10_000L, 30_000L, 50_000L}) {
+                clock.set(baseTime + offset);
+                TrafficControlScheduler.recoverInterruptedSchedule(null);
+                TrafficControlScheduler.recoverPendingReschedules(null);
+
+                JSONObject curTxMeta = TrafficControlScheduler.getTxMetadata(null);
+                assert curTxMeta.getInt("retryCount") == 0 : "Status call at +" + (offset / 1000) + "s must not consume transaction retry";
+
+                JSONObject curPending = new JSONObject(storage.getString(TrafficControlScheduler.KEY_PENDING_RESCHEDULES, "{}"));
+                assert curPending.has("slot_A") && curPending.getJSONObject("slot_A").getInt("retryCount") == 0 :
+                    "Status call at +" + (offset / 1000) + "s must not consume slot_A retry";
+                assert curPending.has("slot_B") && curPending.getJSONObject("slot_B").getInt("retryCount") == 1 :
+                    "Status call at +" + (offset / 1000) + "s must not consume slot_B retry";
+            }
+            System.out.println("  ✓ Repeated status calls before deadline respected backoff without consuming retries");
+
+            // 4. Advance clock to baseTime + 60s (deadline for slot_A recovery)
+            clock.set(baseTime + 60_000L);
+
+            // Execute recoverPendingReschedules():
+            // Must use pending transaction as authoritative desired configuration:
+            // - slot_A was modified to 07:30: must be armed with 07:30, NOT obsolete 07:00 from KEY_SLOTS!
+            TrafficControlScheduler.recoverPendingReschedules(null);
+
+            JSONObject pendingAfterA = new JSONObject(storage.getString(TrafficControlScheduler.KEY_PENDING_RESCHEDULES, "{}"));
+            assert !pendingAfterA.has("slot_A") : "Modified slot_A must succeed recovery and be cleared from pending";
+            assert alarm.armedAlarms.containsKey("slot_A") : "slot_A must be armed in AlarmManager";
+            long triggerSlotA = alarm.armedAlarms.get("slot_A");
+            long expectedTriggerSlotA = TrafficControlScheduler.nextTrigger("07:30", null, clock.currentTimeMillis());
+            assert triggerSlotA == expectedTriggerSlotA : "slot_A must be armed with modified time 07:30 (" + expectedTriggerSlotA + "), got: " + triggerSlotA;
+
+            // Advance clock to baseTime + 120s (deadline for slot_B recovery)
+            clock.set(baseTime + 120_000L);
+            alarm.cancelledAlarms.clear();
+            TrafficControlScheduler.recoverPendingReschedules(null);
+
+            JSONObject pendingAfterB = new JSONObject(storage.getString(TrafficControlScheduler.KEY_PENDING_RESCHEDULES, "{}"));
+            assert !pendingAfterB.has("slot_B") : "Removed slot_B must be removed from pending reschedules";
+            assert alarm.cancelledAlarms.contains("slot_B") : "Removed slot_B must be cancelled in AlarmManager";
+            assert !alarm.armedAlarms.containsKey("slot_B") : "Removed slot_B must NEVER be re-armed";
+            System.out.println("  ✓ recoverPendingReschedules() used pending transaction as authoritative: cancelled removed slot_B, re-armed modified slot_A at 07:30");
+
+            // 5. Transaction bounded retries and exhaustion
+            // Reset clock to baseTime + 60s for transaction retry 1
+            // slot_C continues to fail in AlarmManager
+            long expectedTxDeadline = baseTime + 60_000L;
+            for (int r = 1; r <= TrafficControlScheduler.MAX_RESCHEDULE_ATTEMPTS; r++) {
+                clock.set(expectedTxDeadline);
+                TrafficControlScheduler.recoverInterruptedSchedule(null);
+
+                if (r < TrafficControlScheduler.MAX_RESCHEDULE_ATTEMPTS) {
+                    JSONObject curTxMeta = TrafficControlScheduler.getTxMetadata(null);
+                    assert curTxMeta != null : "Transaction metadata must exist after retry " + r;
+                    assert curTxMeta.getInt("retryCount") == r : "Transaction retryCount must be " + r;
+
+                    long nextBackoff = TrafficControlScheduler.RETRY_BACKOFF_MS[r];
+                    expectedTxDeadline = clock.currentTimeMillis() + nextBackoff;
+                    assert curTxMeta.getLong("nextRetryAt") == expectedTxDeadline : "Transaction nextRetryAt must match backoff";
+
+                    // Verify interim status call does NOT consume retry
+                    clock.advance(nextBackoff / 2);
+                    TrafficControlScheduler.recoverInterruptedSchedule(null);
+                    assert TrafficControlScheduler.getTxMetadata(null).getInt("retryCount") == r :
+                        "Interim status query must not consume transaction retry " + (r + 1);
+
+                    System.out.println("  ✓ Transaction retry " + r + " failed as expected; next deadline at +" + (nextBackoff / 60000) + "m");
+                } else {
+                    // Retry 5 failed -> Transaction exhaustion!
+                    assert storage.getString(TrafficControlScheduler.KEY_TX_UPDATING, null) == null :
+                        "KEY_TX_UPDATING must be cleared on transaction exhaustion";
+                    assert TrafficControlScheduler.getTxMetadata(null) == null :
+                        "KEY_TX_METADATA must be cleared on transaction exhaustion";
+
+                    String lastErr = TrafficControlDiagnostics.getLastScheduleError(null);
+                    assert lastErr != null && lastErr.contains("Transaction recovery exhausted after 5 attempts") :
+                        "Diagnostics must retain visible exhaustion error, got: " + lastErr;
+
+                    assert alarm.recoveryAlarmCancelled : "Shared recovery alarm must be cancelled when all retries are exhausted";
+                    System.out.println("  ✓ Transaction retry exhaustion verified: visible diagnostics retained, transaction state cleared, recovery alarm cancelled");
+                }
+            }
         } finally {
             TrafficControlScheduler.resetAdapters();
         }

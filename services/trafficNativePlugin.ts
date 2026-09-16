@@ -77,7 +77,14 @@ export interface ToneSelectionResult {
 export interface TrafficControlNativePlugin {
   scheduleAlarms(options: { slots: string }): Promise<{ success: boolean }>;
   cancelAllAlarms(): Promise<{ success: boolean }>;
-  getAlarmStatus(): Promise<{ exactAlarmsAllowed: boolean; version: number; lastScheduleError?: string }>;
+  getAlarmStatus(): Promise<{
+    exactAlarmsAllowed: boolean;
+    version: number;
+    supportsCustomTones?: boolean;
+    nativeVersionCode?: number;
+    nativeVersionName?: string;
+    lastScheduleError?: string;
+  }>;
   requestExactAlarmPermission(): Promise<void>;
   getDiagnostics(): Promise<TrafficDiagnosticsData>;
   exportDiagnostics(): Promise<{ report: string }>;
@@ -98,6 +105,9 @@ export interface AlarmStatusResult {
   exactAlarmsAllowed: boolean;
   scheduleError: string | null;
   version: number;
+  supportsCustomTones: boolean;
+  nativeVersionCode?: number;
+  nativeVersionName?: string;
 }
 
 export async function getTrafficAlarmDetailedStatus(): Promise<AlarmStatusResult> {
@@ -107,6 +117,7 @@ export async function getTrafficAlarmDetailedStatus(): Promise<AlarmStatusResult
       exactAlarmsAllowed: false,
       scheduleError: null,
       version: 0,
+      supportsCustomTones: false,
     };
   }
   try {
@@ -118,11 +129,15 @@ export async function getTrafficAlarmDetailedStatus(): Promise<AlarmStatusResult
     if (scheduleError) {
       message = `Scheduling Issue: ${scheduleError}`;
     }
+    const supportsCustomTones = !!status.supportsCustomTones || (typeof status.version === 'number' && status.version >= 4);
     return {
       message,
       exactAlarmsAllowed: !!status.exactAlarmsAllowed,
       scheduleError,
-      version: status.version || 3,
+      version: status.version || 0,
+      supportsCustomTones,
+      nativeVersionCode: status.nativeVersionCode,
+      nativeVersionName: status.nativeVersionName,
     };
   } catch {
     return {
@@ -130,6 +145,7 @@ export async function getTrafficAlarmDetailedStatus(): Promise<AlarmStatusResult
       exactAlarmsAllowed: false,
       scheduleError: null,
       version: 0,
+      supportsCustomTones: false,
     };
   }
 }
@@ -161,23 +177,61 @@ export async function exportTrafficDiagnosticsReport(): Promise<string> {
 }
 
 export async function getSystemAlarmTones(): Promise<SystemRingtone[]> {
-  if (!isAndroidTrafficApp()) return [];
+  if (!isAndroidTrafficApp()) {
+    throw new Error('Device alarm ringtones require the Android app.');
+  }
+
+  // Check native version capabilities
+  try {
+    const status = await TrafficControlNative.getAlarmStatus();
+    const supports = !!status.supportsCustomTones || (typeof status.version === 'number' && status.version >= 4);
+    if (!supports) {
+      throw new Error('Update app required. The installed Android app does not support device alarm ringtones.');
+    }
+  } catch (checkErr: any) {
+    if (checkErr.message?.includes('Update app required')) throw checkErr;
+    throw new Error('Update app required. The installed Android app does not support device alarm ringtones.');
+  }
+
   try {
     const res = await TrafficControlNative.getSystemRingtones();
     return res.ringtones || [];
-  } catch (err) {
+  } catch (err: any) {
     console.error('[TrafficNativePlugin] getSystemRingtones error:', err);
-    return [];
+    const msg = err?.message || String(err);
+    if (msg.includes('does not have the method') || msg.includes('not implemented')) {
+      throw new Error('Update app required. Please update the Connect GOD app from Google Play Store.');
+    }
+    throw new Error(msg || 'Failed to retrieve system ringtones.');
   }
 }
 
 export async function pickCustomAudioFile(): Promise<ToneSelectionResult> {
-  if (!isAndroidTrafficApp()) return { cancelled: true };
+  if (!isAndroidTrafficApp()) {
+    throw new Error('Custom audio selection requires the Android app.');
+  }
+
+  // Check native version capabilities
+  try {
+    const status = await TrafficControlNative.getAlarmStatus();
+    const supports = !!status.supportsCustomTones || (typeof status.version === 'number' && status.version >= 4);
+    if (!supports) {
+      throw new Error('Update app required. The installed Android app does not support custom audio files.');
+    }
+  } catch (checkErr: any) {
+    if (checkErr.message?.includes('Update app required')) throw checkErr;
+    throw new Error('Update app required. The installed Android app does not support custom audio files.');
+  }
+
   try {
     return await TrafficControlNative.pickCustomAudio();
-  } catch (err) {
+  } catch (err: any) {
     console.error('[TrafficNativePlugin] pickCustomAudio error:', err);
-    throw err;
+    const msg = err?.message || String(err);
+    if (msg.includes('does not have the method') || msg.includes('not implemented')) {
+      throw new Error('Update app required. Please update the Connect GOD app from Google Play Store.');
+    }
+    throw new Error(msg || 'Failed to select custom audio file.');
   }
 }
 

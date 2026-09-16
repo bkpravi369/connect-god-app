@@ -241,7 +241,20 @@ export default function TrafficControlScreen() {
   const [hourlyChimesEnabled, setHourlyChimesEnabled] = useState<boolean>(true);
   const [addOpen, setAddOpen] = useState(false);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
-  const [editingToneAlarmId, setEditingToneAlarmId] = useState<string | null>(null);
+  const [newAlarmDraft, setNewAlarmDraft] = useState({
+    hours: '06',
+    minutes: '00',
+    period: 'AM' as 'AM' | 'PM',
+    label: '',
+    snoozeEnabled: true,
+    repeatDays: null as number[] | null,
+    selectedTone: {
+      toneType: 'bundled' as 'bundled' | 'system' | 'file',
+      toneUri: '',
+      toneTitle: 'Traffic Control Hourly Chime',
+    } as ToneSelection,
+  });
+  const [tonePickerTarget, setTonePickerTarget] = useState<'new' | string | null>(null);
 
   // Active audio playback state
   const [activePlayingSlot, setActivePlayingSlot] = useState<string | null>(null);
@@ -362,16 +375,57 @@ export default function TrafficControlScreen() {
     toast.show('Custom alarm created', 'success');
   };
 
-  const handleSelectToneForExistingAlarm = (tone: ToneSelection) => {
-    if (editingToneAlarmId) {
-      updateAlarmState(`custom:${editingToneAlarmId}`, {
-        toneType: tone.toneType,
-        toneUri: tone.toneUri,
-        toneTitle: tone.toneTitle,
-      });
-      toast.show(`Tone changed: ${tone.toneTitle || 'Selected Tone'}`, 'success');
-      setEditingToneAlarmId(null);
-    }
+  const resetNewAlarmDraft = () => {
+    setNewAlarmDraft({
+      hours: '06',
+      minutes: '00',
+      period: 'AM',
+      label: '',
+      snoozeEnabled: true,
+      repeatDays: null,
+      selectedTone: {
+        toneType: 'bundled',
+        toneUri: '',
+        toneTitle: 'Traffic Control Hourly Chime',
+      },
+    });
+  };
+
+  const computeDraftTime = (hours: string, minutes: string, period: 'AM' | 'PM'): string => {
+    let h = Number(hours);
+    if (period === 'PM' && h !== 12) h += 12;
+    if (period === 'AM' && h === 12) h = 0;
+    return `${String(h).padStart(2, '0')}:${minutes}`;
+  };
+
+  const handleSaveNewAlarm = () => {
+    const time = computeDraftTime(newAlarmDraft.hours, newAlarmDraft.minutes, newAlarmDraft.period);
+    addCustomAlarm(time, newAlarmDraft.label.trim(), {
+      enabled: true,
+      snoozeEnabled: newAlarmDraft.snoozeEnabled,
+      repeatDays: newAlarmDraft.repeatDays,
+      loopRingtone: false,
+      ringtoneKey: 'default',
+      toneType: newAlarmDraft.selectedTone.toneType,
+      toneUri: newAlarmDraft.selectedTone.toneUri,
+      toneTitle: newAlarmDraft.selectedTone.toneTitle,
+    });
+    resetNewAlarmDraft();
+    setAddOpen(false);
+  };
+
+  const handleCloseNewAlarm = () => {
+    resetNewAlarmDraft();
+    setAddOpen(false);
+  };
+
+  const handleSelectToneForExistingAlarm = (alarmId: string, tone: ToneSelection) => {
+    updateAlarmState(`custom:${alarmId}`, {
+      toneType: tone.toneType,
+      toneUri: tone.toneUri,
+      toneTitle: tone.toneTitle,
+    });
+    toast.show(`Tone changed: ${tone.toneTitle || 'Selected Tone'}`, 'success');
   };
 
   const deleteCustomAlarm = (id: string) => {
@@ -560,7 +614,7 @@ export default function TrafficControlScreen() {
                 onEnabledChange={(v) => updateAlarmState(key, { enabled: v })}
                 onSnoozeChange={(v) => updateAlarmState(key, { snoozeEnabled: v })}
                 onRepeatChange={(d) => updateAlarmState(key, { repeatDays: d })}
-                onChangeTone={() => setEditingToneAlarmId(row.id)}
+                onChangeTone={() => setTonePickerTarget(row.id)}
               />
             );
           })
@@ -580,10 +634,13 @@ export default function TrafficControlScreen() {
       {/* Add Custom Alarm Modal with Snooze & Repeat Days */}
       <AddAlarmModal
         visible={addOpen}
-        onClose={() => setAddOpen(false)}
-        onAdd={(time, label, state) => {
-          addCustomAlarm(time, label, state);
+        draft={newAlarmDraft}
+        onUpdateDraft={(fields) => setNewAlarmDraft((prev) => ({ ...prev, ...fields }))}
+        onClose={handleCloseNewAlarm}
+        onSave={handleSaveNewAlarm}
+        onOpenTonePicker={() => {
           setAddOpen(false);
+          setTonePickerTarget('new');
         }}
       />
 
@@ -598,17 +655,37 @@ export default function TrafficControlScreen() {
         onCopy={handleCopyReport}
       />
 
-      {/* Tone Picker Modal for editing an existing custom alarm */}
-      {editingToneAlarmId && (
+      {/* Tone Picker Modal for both new alarms and existing custom alarms */}
+      {tonePickerTarget && (
         <TonePickerModal
-          visible={!!editingToneAlarmId}
-          currentTone={{
-            toneType: getAlarmState(`custom:${editingToneAlarmId}`).toneType || 'bundled',
-            toneUri: getAlarmState(`custom:${editingToneAlarmId}`).toneUri || '',
-            toneTitle: getAlarmState(`custom:${editingToneAlarmId}`).toneTitle || 'Traffic Control Hourly Chime',
+          visible={!!tonePickerTarget}
+          currentTone={
+            tonePickerTarget === 'new'
+              ? newAlarmDraft.selectedTone
+              : {
+                  toneType: getAlarmState(`custom:${tonePickerTarget}`).toneType || 'bundled',
+                  toneUri: getAlarmState(`custom:${tonePickerTarget}`).toneUri || '',
+                  toneTitle: getAlarmState(`custom:${tonePickerTarget}`).toneTitle || 'Traffic Control Hourly Chime',
+                }
+          }
+          supportsCustomTones={detailedStatus?.supportsCustomTones ?? true}
+          onClose={() => {
+            const wasNew = tonePickerTarget === 'new';
+            setTonePickerTarget(null);
+            if (wasNew) {
+              setAddOpen(true);
+            }
           }}
-          onClose={() => setEditingToneAlarmId(null)}
-          onSelectTone={handleSelectToneForExistingAlarm}
+          onSelectTone={(tone) => {
+            if (tonePickerTarget === 'new') {
+              setNewAlarmDraft((prev) => ({ ...prev, selectedTone: tone }));
+              setTonePickerTarget(null);
+              setAddOpen(true);
+            } else {
+              handleSelectToneForExistingAlarm(tonePickerTarget, tone);
+              setTonePickerTarget(null);
+            }
+          }}
         />
       )}
     </View>
@@ -877,11 +954,13 @@ function CustomAlarmCard({
 function TonePickerModal({
   visible,
   currentTone,
+  supportsCustomTones = true,
   onClose,
   onSelectTone,
 }: {
   visible: boolean;
   currentTone?: ToneSelection;
+  supportsCustomTones?: boolean;
   onClose: () => void;
   onSelectTone: (tone: ToneSelection) => void;
 }) {
@@ -893,6 +972,7 @@ function TonePickerModal({
   const [playingKey, setPlayingKey] = useState<string | null>(null);
   const [systemTones, setSystemTones] = useState<SystemRingtone[]>([]);
   const [loadingSystemTones, setLoadingSystemTones] = useState(false);
+  const [systemTonesError, setSystemTonesError] = useState<string | null>(null);
   const [importedFile, setImportedFile] = useState<ToneSelection | null>(null);
   const [pickingFile, setPickingFile] = useState(false);
 
@@ -916,16 +996,21 @@ function TonePickerModal({
   }, [visible, currentTone]);
 
   useEffect(() => {
-    if (visible && tab === 'system' && systemTones.length === 0 && !loadingSystemTones) {
+    if (visible && tab === 'system' && supportsCustomTones && systemTones.length === 0 && !loadingSystemTones && !systemTonesError) {
       setLoadingSystemTones(true);
+      setSystemTonesError(null);
       getSystemAlarmTones()
         .then((tones) => {
           setSystemTones(tones);
           setLoadingSystemTones(false);
         })
-        .catch(() => setLoadingSystemTones(false));
+        .catch((err: any) => {
+          setLoadingSystemTones(false);
+          const msg = err?.message || 'Failed to load system alarm ringtones';
+          setSystemTonesError(msg);
+        });
     }
-  }, [visible, tab]);
+  }, [visible, tab, supportsCustomTones, systemTones.length, loadingSystemTones, systemTonesError]);
 
   const handleTogglePreview = async (type: 'bundled' | 'system' | 'file', uri?: string) => {
     const key = `${type}:${uri || 'default'}`;
@@ -954,11 +1039,15 @@ function TonePickerModal({
         };
         setImportedFile(tone);
         setSelected(tone);
-        toast.show('Audio imported to secure storage', 'success');
+        toast.show(`Imported: ${tone.toneTitle}`, 'success');
+        // Automatically select imported file, apply to editor, and close picker
+        onSelectTone(tone);
+        onClose();
       }
     } catch (e: any) {
       setPickingFile(false);
-      toast.show(e?.message || 'Failed to select audio file', 'error');
+      const errMsg = e?.message || 'Failed to select audio file';
+      toast.show(errMsg, 'error');
     }
   };
 
@@ -1077,10 +1166,36 @@ function TonePickerModal({
           {/* Tab 2: Device System Alarm Tones */}
           {tab === 'system' && (
             <ScrollView style={styles.toneList} showsVerticalScrollIndicator={false}>
-              {loadingSystemTones ? (
+              {!supportsCustomTones ? (
+                <View style={styles.updateNoticeCard}>
+                  <AlertTriangle color={COLORS.secondary[600]} size={28} />
+                  <Text style={styles.updateNoticeTitle}>Update App Required</Text>
+                  <Text style={styles.updateNoticeText}>
+                    The installed Android app version does not support device alarm ringtones. Please update the Connect GOD app from Google Play Store.
+                  </Text>
+                </View>
+              ) : loadingSystemTones ? (
                 <View style={{ paddingVertical: 40, alignItems: 'center' }}>
                   <ActivityIndicator size="small" color={COLORS.primary[600]} />
                   <Text style={[styles.toneSubtitle, { marginTop: 8 }]}>Loading system tones…</Text>
+                </View>
+              ) : systemTonesError ? (
+                <View style={styles.updateNoticeCard}>
+                  <AlertTriangle color={COLORS.secondary[600]} size={28} />
+                  <Text style={styles.updateNoticeTitle}>
+                    {systemTonesError.includes('Update app required') ? 'Update App Required' : 'Unable to Load Tones'}
+                  </Text>
+                  <Text style={styles.updateNoticeText}>{systemTonesError}</Text>
+                  {!systemTonesError.includes('Update app required') && (
+                    <Pressable
+                      style={styles.retryBtn}
+                      onPress={() => {
+                        setSystemTonesError(null);
+                      }}
+                    >
+                      <Text style={styles.retryBtnText}>Try Again</Text>
+                    </Pressable>
+                  )}
                 </View>
               ) : systemTones.length === 0 ? (
                 <View style={{ paddingVertical: 40, alignItems: 'center' }}>
@@ -1143,26 +1258,36 @@ function TonePickerModal({
           {/* Tab 3: Custom File Picker */}
           {tab === 'file' && (
             <View style={{ paddingVertical: SPACING.sm }}>
-              <View style={[styles.filePickCard, importedFile && styles.filePickCardActive]}>
-                <FolderOpen color={COLORS.primary[600]} size={36} strokeWidth={1.8} />
-                <Pressable
-                  style={({ pressed }) => [styles.filePickBtn, pressed && styles.btnPressed]}
-                  onPress={handlePickFile}
-                  disabled={pickingFile}
-                >
-                  {pickingFile ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <>
-                      <Music color="#ffffff" size={16} strokeWidth={2} />
-                      <Text style={styles.filePickBtnText}>Select Audio File from Phone</Text>
-                    </>
-                  )}
-                </Pressable>
-                <Text style={styles.filePickDesc}>
-                  Supports MP3 and WAV. Audio is saved to app storage so alarms play reliably even after reboot.
-                </Text>
-              </View>
+              {!supportsCustomTones ? (
+                <View style={styles.updateNoticeCard}>
+                  <AlertTriangle color={COLORS.secondary[600]} size={28} />
+                  <Text style={styles.updateNoticeTitle}>Update App Required</Text>
+                  <Text style={styles.updateNoticeText}>
+                    The installed Android app does not support importing custom audio. Please update the Connect GOD app from Google Play Store.
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.filePickCard, importedFile && styles.filePickCardActive]}>
+                  <FolderOpen color={COLORS.primary[600]} size={36} strokeWidth={1.8} />
+                  <Pressable
+                    style={({ pressed }) => [styles.filePickBtn, pressed && styles.btnPressed]}
+                    onPress={handlePickFile}
+                    disabled={pickingFile}
+                  >
+                    {pickingFile ? (
+                      <ActivityIndicator size="small" color="#ffffff" />
+                    ) : (
+                      <>
+                        <Music color="#ffffff" size={16} strokeWidth={2} />
+                        <Text style={styles.filePickBtnText}>Select Audio File from Phone</Text>
+                      </>
+                    )}
+                  </Pressable>
+                  <Text style={styles.filePickDesc}>
+                    Supports MP3 and WAV. Audio is saved to app storage so alarms play reliably even after reboot.
+                  </Text>
+                </View>
+              )}
 
               {importedFile && (
                 <Pressable
@@ -1224,68 +1349,31 @@ function TonePickerModal({
  */
 function AddAlarmModal({
   visible,
+  draft,
+  onUpdateDraft,
   onClose,
-  onAdd,
+  onSave,
+  onOpenTonePicker,
 }: {
   visible: boolean;
+  draft: {
+    hours: string;
+    minutes: string;
+    period: 'AM' | 'PM';
+    label: string;
+    snoozeEnabled: boolean;
+    repeatDays: number[] | null;
+    selectedTone: ToneSelection;
+  };
+  onUpdateDraft: (fields: Partial<typeof draft>) => void;
   onClose: () => void;
-  onAdd: (time: string, label: string, state: AlarmState) => void;
+  onSave: () => void;
+  onOpenTonePicker: () => void;
 }) {
-  const [hours, setHours] = useState('06');
-  const [minutes, setMinutes] = useState('00');
-  const [period, setPeriod] = useState<'AM' | 'PM'>('AM');
-  const [label, setLabel] = useState('');
-  const [snoozeEnabled, setSnoozeEnabled] = useState(true);
-  const [repeatDays, setRepeatDays] = useState<number[] | null>(null);
-  const [selectedTone, setSelectedTone] = useState<ToneSelection>({
-    toneType: 'bundled',
-    toneUri: '',
-    toneTitle: 'Traffic Control Hourly Chime',
-  });
-  const [tonePickerOpen, setTonePickerOpen] = useState(false);
-
-  useEffect(() => {
-    if (!visible) {
-      setHours('06');
-      setMinutes('00');
-      setPeriod('AM');
-      setLabel('');
-      setSnoozeEnabled(true);
-      setRepeatDays(null);
-      setSelectedTone({
-        toneType: 'bundled',
-        toneUri: '',
-        toneTitle: 'Traffic Control Hourly Chime',
-      });
-      setTonePickerOpen(false);
-    }
-  }, [visible]);
-
-  const computeTime = (): string => {
-    let h = Number(hours);
-    if (period === 'PM' && h !== 12) h += 12;
-    if (period === 'AM' && h === 12) h = 0;
-    return `${String(h).padStart(2, '0')}:${minutes}`;
-  };
-
   const validTime = () => {
-    const h = Number(hours);
-    const m = Number(minutes);
+    const h = Number(draft.hours);
+    const m = Number(draft.minutes);
     return h >= 1 && h <= 12 && m >= 0 && m <= 59;
-  };
-
-  const handleSave = () => {
-    if (!validTime()) return;
-    onAdd(computeTime(), label.trim(), {
-      enabled: true,
-      snoozeEnabled,
-      repeatDays,
-      loopRingtone: false,
-      ringtoneKey: 'default',
-      toneType: selectedTone.toneType,
-      toneUri: selectedTone.toneUri,
-      toneTitle: selectedTone.toneTitle,
-    });
   };
 
   return (
@@ -1307,16 +1395,16 @@ function AddAlarmModal({
               <TextInput
                 style={styles.timeInput}
                 keyboardType="number-pad"
-                value={hours}
-                onChangeText={(t) => setHours(t.replace(/[^0-9]/g, '').slice(0, 2))}
+                value={draft.hours}
+                onChangeText={(t) => onUpdateDraft({ hours: t.replace(/[^0-9]/g, '').slice(0, 2) })}
                 maxLength={2}
               />
               <Text style={styles.timeColon}>:</Text>
               <TextInput
                 style={styles.timeInput}
                 keyboardType="number-pad"
-                value={minutes}
-                onChangeText={(t) => setMinutes(t.replace(/[^0-9]/g, '').slice(0, 2))}
+                value={draft.minutes}
+                onChangeText={(t) => onUpdateDraft({ minutes: t.replace(/[^0-9]/g, '').slice(0, 2) })}
                 maxLength={2}
               />
             </View>
@@ -1324,10 +1412,10 @@ function AddAlarmModal({
               {(['AM', 'PM'] as const).map((p) => (
                 <Pressable
                   key={p}
-                  style={[styles.periodBtn, period === p && styles.periodBtnActive]}
-                  onPress={() => setPeriod(p)}
+                  style={[styles.periodBtn, draft.period === p && styles.periodBtnActive]}
+                  onPress={() => onUpdateDraft({ period: p })}
                 >
-                  <Text style={[styles.periodBtnText, period === p && styles.periodBtnTextActive]}>
+                  <Text style={[styles.periodBtnText, draft.period === p && styles.periodBtnTextActive]}>
                     {p}
                   </Text>
                 </Pressable>
@@ -1341,8 +1429,8 @@ function AddAlarmModal({
             style={styles.modalInput}
             placeholder="e.g. Afternoon Traffic Control"
             placeholderTextColor={COLORS.neutral[400]}
-            value={label}
-            onChangeText={setLabel}
+            value={draft.label}
+            onChangeText={(t) => onUpdateDraft({ label: t })}
           />
 
           {/* Alarm Tone Setting */}
@@ -1353,12 +1441,12 @@ function AddAlarmModal({
                 <Text style={styles.modalSettingLabel}>Alarm Tone</Text>
               </View>
               <Text style={styles.modalToneSub} numberOfLines={1}>
-                {selectedTone.toneTitle || 'Traffic Control Hourly Chime'}
+                {draft.selectedTone.toneTitle || 'Traffic Control Hourly Chime'}
               </Text>
             </View>
             <Pressable
               style={({ pressed }) => [styles.changeToneBtn, pressed && styles.btnPressed]}
-              onPress={() => setTonePickerOpen(true)}
+              onPress={onOpenTonePicker}
             >
               <Text style={styles.changeToneBtnText}>Change Tone</Text>
             </Pressable>
@@ -1370,7 +1458,10 @@ function AddAlarmModal({
               <Clock color={COLORS.neutral[600]} size={16} strokeWidth={2} />
               <Text style={styles.modalSettingLabel}>Enable Snooze</Text>
             </View>
-            <Toggle value={snoozeEnabled} onChange={setSnoozeEnabled} />
+            <Toggle
+              value={draft.snoozeEnabled}
+              onChange={(v) => onUpdateDraft({ snoozeEnabled: v })}
+            />
           </View>
 
           {/* Day Recurrence for Custom Alarm */}
@@ -1381,15 +1472,15 @@ function AddAlarmModal({
             </View>
             <View style={styles.weekRow}>
               {WEEKDAYS.map((d, i) => {
-                const active = repeatDays?.includes(i) ?? false;
+                const active = draft.repeatDays?.includes(i) ?? false;
                 return (
                   <Pressable
                     key={d}
                     style={[styles.modalWeekBtn, active && styles.modalWeekBtnActive]}
                     onPress={() => {
-                      const cur = repeatDays ?? [];
+                      const cur = draft.repeatDays ?? [];
                       const next = active ? cur.filter((x) => x !== i) : [...cur, i].sort();
-                      setRepeatDays(next.length === 0 ? null : next);
+                      onUpdateDraft({ repeatDays: next.length === 0 ? null : next });
                     }}
                   >
                     <Text style={[styles.modalWeekBtnText, active && styles.modalWeekBtnTextActive]}>
@@ -1407,22 +1498,12 @@ function AddAlarmModal({
               pressed && styles.modalAddBtnPressed,
               !validTime() && styles.modalAddBtnDisabled,
             ]}
-            onPress={handleSave}
+            onPress={onSave}
             disabled={!validTime()}
           >
             <Plus color="#ffffff" size={18} strokeWidth={2.4} />
             <Text style={styles.modalAddBtnText}>Save Alarm</Text>
           </Pressable>
-
-          <TonePickerModal
-            visible={tonePickerOpen}
-            currentTone={selectedTone}
-            onClose={() => setTonePickerOpen(false)}
-            onSelectTone={(t) => {
-              setSelectedTone(t);
-              setTonePickerOpen(false);
-            }}
-          />
         </View>
       </View>
     </Modal>
@@ -2234,6 +2315,40 @@ const styles = StyleSheet.create({
   diagEventTime: { fontFamily: FONTS.sansMedium, fontSize: 10, color: COLORS.neutral[400], width: 65 },
   diagEventTitle: { fontFamily: FONTS.sansBold, fontSize: 11, color: COLORS.neutral[800] },
   diagEventDetails: { fontFamily: FONTS.sans, fontSize: 11, color: COLORS.neutral[600] },
+  updateNoticeCard: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+    borderWidth: 1,
+    borderRadius: RADIUS.md,
+    padding: SPACING.md,
+    marginVertical: SPACING.md,
+    alignItems: 'center',
+    gap: 8,
+  },
+  updateNoticeTitle: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 14,
+    color: '#92400e',
+  },
+  updateNoticeText: {
+    fontFamily: FONTS.sans,
+    fontSize: 12,
+    color: '#b45309',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  retryBtn: {
+    backgroundColor: COLORS.primary[700],
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: RADIUS.md,
+    marginTop: 12,
+  },
+  retryBtnText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 12,
+    color: '#ffffff',
+  },
 });
 
 export { TrafficControlScreen };

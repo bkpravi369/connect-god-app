@@ -199,6 +199,17 @@ public final class TrafficControlDiagnostics {
             SharedPreferences p = prefs(context);
             // Device Info
             JSONObject device = new JSONObject();
+            int vCode = 13;
+            String vName = "1.0.12";
+            try {
+                android.content.pm.PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+                vCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ? (int) pInfo.getLongVersionCode() : pInfo.versionCode;
+                if (pInfo.versionName != null) {
+                    vName = pInfo.versionName;
+                }
+            } catch (Exception ignored) {}
+            device.put("versionCode", vCode);
+            device.put("versionName", vName);
             device.put("manufacturer", Build.MANUFACTURER);
             device.put("model", Build.MODEL);
             device.put("sdkInt", Build.VERSION.SDK_INT);
@@ -257,6 +268,8 @@ public final class TrafficControlDiagnostics {
 
             if (dev != null) {
                 sb.append("--- DEVICE INFO ---\n");
+                sb.append("App Version: ").append(dev.optString("versionName", "1.0.12"))
+                  .append(" (Version Code: ").append(dev.optInt("versionCode", 13)).append(")\n");
                 sb.append("Device: ").append(dev.optString("manufacturer")).append(" ").append(dev.optString("model")).append("\n");
                 sb.append("Android OS: ").append(dev.optString("release")).append(" (API ").append(dev.optInt("sdkInt")).append(")\n");
                 sb.append("Exact Alarms Allowed: ").append(dev.optBoolean("exactAlarmsAllowed") ? "YES" : "NO (PERMISSION NEEDED)").append("\n");

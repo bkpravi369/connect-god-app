@@ -24,6 +24,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 import java.io.File;
+import java.io.FileInputStream;
 
 public class TrafficControlAudioService extends Service {
     private static final String TAG = "TrafficAudioService";
@@ -222,8 +223,14 @@ public class TrafficControlAudioService extends Service {
             if ("file".equalsIgnoreCase(session.toneType) && session.toneUri != null) {
                 File file = new File(session.toneUri);
                 if (file.exists() && file.canRead()) {
-                    mediaPlayer.setDataSource(file.getAbsolutePath());
-                    loaded = true;
+                    try (FileInputStream fis = new FileInputStream(file)) {
+                        mediaPlayer.setDataSource(fis.getFD());
+                        loaded = true;
+                    } catch (Exception fileEx) {
+                        Log.w(TAG, "Cannot load custom audio file " + session.toneUri + ": " + fileEx.getMessage() + ". Using bundled fallback.");
+                        TrafficControlDiagnostics.recordEvent(getApplicationContext(), session.slotId, "FALLBACK_TONE",
+                            "Custom audio load error (" + fileEx.getMessage() + "); using bundled fallback chime");
+                    }
                 } else {
                     Log.w(TAG, "Custom audio file not accessible at " + session.toneUri + ". Using bundled fallback.");
                     TrafficControlDiagnostics.recordEvent(getApplicationContext(), session.slotId, "FALLBACK_TONE",

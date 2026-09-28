@@ -40,6 +40,7 @@ import {
 } from "@/services/audioService";
 import { AudioPlayer } from "@/components/AudioPlayer";
 import { SoundwaveIndicator } from "@/components/SoundwaveIndicator";
+import { Capacitor } from "@capacitor/core";
 
 // ── Tab Hierarchy & Cloudflare R2-Connected Structure ────────────────────
 export interface SubTabItem {
@@ -521,11 +522,39 @@ export default function MediaScreen() {
 
     const queryParams = `url=${encodeURIComponent(rawAudioUrl)}&title=${encodeURIComponent(cleanTitle || "Audio Track")}`;
     const proxyPath = `/api/download?${queryParams}`;
+    const baseOrigin = typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "https://app.bkkozhikode.com";
+    const fullUrl = `${baseOrigin}${proxyPath}`;
 
-    if (Platform.OS === "web" && typeof document !== "undefined") {
+    // 1. Capacitor Native Android / iOS Mobile App Environment
+    if (Capacitor.isNativePlatform()) {
       try {
+        if (typeof window !== "undefined" && typeof window.open === "function") {
+          window.open(fullUrl, "_system");
+          return;
+        }
+      } catch (e) {
+        console.warn("[MediaScreen] window.open _system error:", e);
+      }
+      const ok = await Linking.canOpenURL(fullUrl).catch(() => false);
+      if (ok) {
+        await Linking.openURL(fullUrl);
+      } else {
+        await Linking.openURL(encodeURI(fullUrl)).catch(() => {});
+      }
+      return;
+    }
+
+    // 2. Standard Web Browser Environment (Blob download for single-click save)
+    if (typeof window !== "undefined" && typeof document !== "undefined") {
+      try {
+        const response = await fetch(proxyPath);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href = proxyPath;
+        a.href = blobUrl;
         a.download = `${cleanTitle}.mp3`;
         a.style.display = "none";
         document.body.appendChild(a);
@@ -534,28 +563,18 @@ export default function MediaScreen() {
           if (document.body.contains(a)) {
             document.body.removeChild(a);
           }
+          window.URL.revokeObjectURL(blobUrl);
         }, 1000);
         return;
-      } catch (e) {
-        if (typeof window !== "undefined") {
-          window.location.href = proxyPath;
-          return;
-        }
+      } catch (err) {
+        console.warn("[MediaScreen] Web blob download fallback:", err);
+        window.location.href = proxyPath;
+        return;
       }
     }
 
-    // Native / external linking fallback
-    const baseOrigin = typeof window !== "undefined" && window.location?.origin
-      ? window.location.origin
-      : "https://app.bkkozhikode.com";
-    const fullDownloadUrl = `${baseOrigin}${proxyPath}`;
-
-    const ok = await Linking.canOpenURL(fullDownloadUrl).catch(() => false);
-    if (ok) {
-      await Linking.openURL(fullDownloadUrl);
-    } else {
-      await Linking.openURL(encodeURI(fullDownloadUrl)).catch(() => {});
-    }
+    // 3. Fallback for any other environment
+    await Linking.openURL(fullUrl).catch(() => {});
   };
 
   // Timeline scrubber calculation

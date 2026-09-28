@@ -507,36 +507,54 @@ export default function MediaScreen() {
     }
   };
 
-  const handleDownload = async (track: CloudflareR2Item) => {
-    if (!track.url || !track.url.trim()) {
+  const handleDownload = async (track: CloudflareR2Item | null | undefined) => {
+    if (!track || !track.url || !track.url.trim()) {
       toast.show("Download link not available", "info");
       return;
     }
     const cleanTitle = track.name
-      ? track.name.replace(/\.[^/.]+$/, "")
-      : (track.key ? track.key.split("/").pop()?.replace(/\.[^/.]+$/, "") : "Audio Track");
-    const downloadUrl = encodeURI(decodeURI(track.url.trim()));
+      ? track.name.replace(/\.[^/.]+$/, "").trim()
+      : (track.key ? track.key.split("/").pop()?.replace(/\.[^/.]+$/, "").trim() : "Audio Track");
+    const rawAudioUrl = track.url.trim();
 
     toast.show(`Downloading: ${cleanTitle}`, "info");
 
+    const queryParams = `url=${encodeURIComponent(rawAudioUrl)}&title=${encodeURIComponent(cleanTitle || "Audio Track")}`;
+    const proxyPath = `/api/download?${queryParams}`;
+
     if (Platform.OS === "web" && typeof document !== "undefined") {
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.download = `${cleanTitle}.mp3`;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      return;
+      try {
+        const a = document.createElement("a");
+        a.href = proxyPath;
+        a.download = `${cleanTitle}.mp3`;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          if (document.body.contains(a)) {
+            document.body.removeChild(a);
+          }
+        }, 1000);
+        return;
+      } catch (e) {
+        if (typeof window !== "undefined") {
+          window.location.href = proxyPath;
+          return;
+        }
+      }
     }
 
-    const ok = await Linking.canOpenURL(downloadUrl).catch(() => false);
+    // Native / external linking fallback
+    const baseOrigin = typeof window !== "undefined" && window.location?.origin
+      ? window.location.origin
+      : "https://app.bkkozhikode.com";
+    const fullDownloadUrl = `${baseOrigin}${proxyPath}`;
+
+    const ok = await Linking.canOpenURL(fullDownloadUrl).catch(() => false);
     if (ok) {
-      await Linking.openURL(downloadUrl);
+      await Linking.openURL(fullDownloadUrl);
     } else {
-      const encoded = encodeURI(downloadUrl);
-      await Linking.openURL(encoded).catch(() => {});
+      await Linking.openURL(encodeURI(fullDownloadUrl)).catch(() => {});
     }
   };
 

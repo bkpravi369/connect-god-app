@@ -528,21 +528,38 @@ export default function MediaScreen() {
     const fullUrl = `${baseOrigin}${proxyPath}`;
 
     // 1. Capacitor Native Android / iOS Mobile App Environment
+    // Android WebView cannot download attachments directly without a native DownloadListener,
+    // and internal domain URLs are trapped inside the WebView by allowNavigation.
+    // By routing through httpbin.org (outside allowNavigation), Capacitor's Bridge
+    // immediately delegates the request to Android's ACTION_VIEW system browser / DownloadManager,
+    // which downloads the MP3 directly to device storage.
     if (Capacitor.isNativePlatform()) {
+      const externalDownloadUrl = `https://httpbin.org/redirect-to?url=${encodeURIComponent(fullUrl)}`;
       try {
-        if (typeof window !== "undefined" && typeof window.open === "function") {
-          window.open(fullUrl, "_system");
+        if (typeof window !== "undefined") {
+          window.location.href = externalDownloadUrl;
           return;
         }
       } catch (e) {
-        console.warn("[MediaScreen] window.open _system error:", e);
+        console.warn("[MediaScreen] location.href navigation error:", e);
       }
-      const ok = await Linking.canOpenURL(fullUrl).catch(() => false);
-      if (ok) {
-        await Linking.openURL(fullUrl);
-      } else {
-        await Linking.openURL(encodeURI(fullUrl)).catch(() => {});
+      try {
+        if (typeof document !== "undefined") {
+          const a = document.createElement("a");
+          a.href = externalDownloadUrl;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            if (document.body.contains(a)) document.body.removeChild(a);
+          }, 500);
+          return;
+        }
+      } catch (e) {
+        console.warn("[MediaScreen] Anchor download error:", e);
       }
+      await Linking.openURL(externalDownloadUrl).catch(() => {});
       return;
     }
 

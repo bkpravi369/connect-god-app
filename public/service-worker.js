@@ -1,5 +1,5 @@
-// Connect GOD Service Worker - Cache Version v3 (Instant Invalidation)
-const CACHE_NAME = 'connectgod-cache-v3';
+// Connect GOD Service Worker - Cache Version v4 (Instant Invalidation)
+const CACHE_NAME = 'connectgod-cache-v4';
 
 // Static assets to pre-cache on install
 const STATIC_ASSETS = [
@@ -48,8 +48,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 1. STRICT NETWORK-FIRST FOR DYNAMIC DATA (.json, /api/, data queries, .js scripts)
+  // 1. STRICT NETWORK-FIRST FOR DYNAMIC DATA (.json, /api/, data queries, .js scripts, and HTML root)
   const isDynamicOrCode =
+    url.pathname === '/' ||
+    url.pathname === '/index.html' ||
     url.pathname.endsWith('.json') ||
     url.pathname.endsWith('.js') ||
     url.pathname.startsWith('/api/') ||

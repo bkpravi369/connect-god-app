@@ -41,24 +41,56 @@ function extractVardanText(rawHtml) {
     .replace(/&quot;/gi, '"')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>');
+    .replace(/&gt;/gi, '>')
+    // Convert block & line break tags to newlines to preserve sentence and paragraph boundaries
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6])>/gi, '\n\n')
+    .replace(/<(p|div|tr|h[1-6])[^>]*>/gi, '\n')
+    .replace(/<[^>]*>?/gm, ' ');
 
-  const clean = decoded.replace(/<[^>]*>?/gm, ' ');
-  const regex =
-    /(?:വരദാനം|വരദാനം\s*:|വരദാനം\s*:-|वरदान|वरदान\s*:|वरदान\s*:-|Varadan|Blessing)\s*[:\-–]?\s*([\s\S]*?)(?=(?:വിശദീകരണം|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|സ്ലോഗൻ\s*:|സ്ലോഗന്\s*:-|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/i;
-  const match = clean.match(regex);
-  if (!match || !match[1]) return '';
+  // 1. Locate "വരദാനം" strictly when it appears as a section heading (e.g. "വരദാനം :-", "വരദാനം:").
+  // Do not match mid-sentence words.
+  const headingRegex =
+    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/iu;
 
-  let vardan = match[1]
+  let contentToParse = decoded;
+  const match = decoded.match(headingRegex);
+  if (match && match[1]) {
+    contentToParse = match[1];
+  } else if (/^(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)/i.test(decoded.trim())) {
+    contentToParse = decoded
+      .trim()
+      .replace(/^(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*/iu, '');
+  }
+
+  // 2. Trim leading hyphens, colons, or whitespace
+  let remaining = contentToParse.replace(/^[:\-–\s]+/, '').trim();
+
+  // 3. Extract ONLY the first title sentence immediately following it, stopping strictly at the very first full stop (.)
+  let titleSentence = '';
+  const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.!\u0964]?)/i);
+  if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
+    titleSentence = benedictionMatch[1].trim();
+  } else {
+    const stopMatch = remaining.match(/^([\s\S]*?(?:[.!\u0964]|\n\s*\n))/);
+    if (stopMatch && stopMatch[1] && stopMatch[1].trim().length > 15) {
+      titleSentence = stopMatch[1].trim();
+    } else {
+      const dotIdx = remaining.indexOf('.');
+      titleSentence = dotIdx !== -1 ? remaining.slice(0, dotIdx + 1).trim() : remaining;
+    }
+  }
+
+  titleSentence = titleSentence
     .replace(/^[:\-–\s]+/, '')
     .replace(/\s+/g, ' ')
     .trim();
 
-  const sentenceMatch = vardan.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.।]?)/i);
-  if (sentenceMatch && sentenceMatch[1].trim().length > 15) {
-    vardan = sentenceMatch[1].trim();
+  if (titleSentence && !/[.!\u0964]$/.test(titleSentence)) {
+    titleSentence += '.';
   }
-  return vardan;
+
+  return titleSentence.length > 15 ? titleSentence : '';
 }
 
 function getTodayISTDateString() {

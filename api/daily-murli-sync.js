@@ -128,15 +128,35 @@ function extractMalayalamSections(htmlOrText) {
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>');
 
-  const clean = decoded.replace(/<[^>]*>?/gm, ' ');
+  const clean = decoded
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6])>/gi, '\n\n')
+    .replace(/<(p|div|tr|h[1-6])[^>]*>/gi, '\n')
+    .replace(/<[^>]*>?/gm, ' ');
 
-  const varadanMatch = clean.match(
-    /(?:വരദാനം[:\s]|വരദാനം\s*[-–:]|Varadan[:\s]|Blessing[:\s])\s*([\s\S]*?)(?=(?:വിശദീകരണം|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|$))/i
-  );
-  let rawVaradan = varadanMatch ? varadanMatch[1].replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim() : '';
-  const sentenceMatch = rawVaradan.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:)[.।]?)/i);
-  if (sentenceMatch && sentenceMatch[1].trim().length > 15) {
-    rawVaradan = sentenceMatch[1].trim();
+  const headingRegex =
+    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/iu;
+
+  let rawVaradan = '';
+  const varadanMatch = clean.match(headingRegex);
+  if (varadanMatch && varadanMatch[1]) {
+    let remaining = varadanMatch[1].replace(/^[:\-–\s]+/, '').trim();
+    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.!\u0964]?)/i);
+    if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
+      rawVaradan = benedictionMatch[1].trim();
+    } else {
+      const stopMatch = remaining.match(/^([\s\S]*?(?:[.!\u0964]|\n\s*\n))/);
+      if (stopMatch && stopMatch[1] && stopMatch[1].trim().length > 15) {
+        rawVaradan = stopMatch[1].trim();
+      } else {
+        const dotIdx = remaining.indexOf('.');
+        rawVaradan = dotIdx !== -1 ? remaining.slice(0, dotIdx + 1).trim() : remaining;
+      }
+    }
+    rawVaradan = rawVaradan.replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim();
+    if (rawVaradan && !/[.!\u0964]$/.test(rawVaradan)) {
+      rawVaradan += '.';
+    }
   }
 
   const sloganMatch = clean.match(/(?:സ്ലോഗൻ[:\s]|സ്ലോഗൻ\s*[-–:]|സ്ലോഗന്[:\s]|സ്ലോഗന്\s*[-–:]|Slogan[:\s])\s*([\s\S]*?)(?=(?:മാതേശ്വരി|അവ്യക്ത|$))/i);

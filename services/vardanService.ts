@@ -1,22 +1,25 @@
 import { getTodayISTDateString, getFormattedMurliDate } from './murliService';
 import { getDateStampedJSON, setDateStampedJSON } from '@/lib/storage';
 
-const VARDAN_CACHE_KEY = 'connectgod_extracted_vardan';
+const VARDAN_CACHE_KEY = 'connectgod_extracted_vardan_v4';
 
 export const FALLBACK_VARADAN_ML =
   'സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി, മാസ്റ്റർ ദാതാവായി മാറി സർവ്വ ആത്മാക്കൾക്കും ശാന്തിയുടെയും ശക്തിയുടെയും ദാനം നൽകുന്ന സദാ തൃപ്ത ആത്മാവായി ഭവിക്കട്ടെ.';
 
 /**
- * Robust, 100% crash-proof extractor to isolate ONLY the Vardan blessing text from raw Murli HTML.
- * Matches headings like "വരദാനം:", "വരദാനം :-", "वरदान:", "Varadan:", "Blessing:".
- * Completely eliminates any external or manual JSON file dependency.
+ * Robust extractor to isolate ONLY the Varadanam blessing title sentence from raw Murli HTML.
+ * 1. Locates "വരദാനം" strictly when it appears as a section heading (e.g. "വരദാനം :-", "വരദാനം:").
+ *    Mid-sentence words (e.g. in Sunday Murli discourse) are strictly ignored.
+ * 2. Extracts ONLY the first title sentence immediately following it, stopping strictly at the very
+ *    first full stop (.) or sentence terminator, discarding the explanation paragraph below it.
+ * 3. Trims leading hyphens, colons, or whitespace so only the clean single blessing title sentence is returned.
  */
 export function extractVardanFromHtml(rawHtml: string): string {
   try {
     if (!rawHtml || typeof rawHtml !== 'string') return FALLBACK_VARADAN_ML;
 
-    // 1. Safely decode numeric & named HTML entities (e.g. &#3381;...)
-    const decoded = rawHtml
+    // 1. Safely decode numeric & named HTML entities
+    let text = rawHtml
       .replace(/&#(\d+);/g, (_, code) => {
         try {
           return String.fromCharCode(Number(code));
@@ -35,30 +38,61 @@ export function extractVardanFromHtml(rawHtml: string): string {
       .replace(/&quot;/gi, '"')
       .replace(/&amp;/gi, '&')
       .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>');
+      .replace(/&gt;/gi, '>')
+      // Convert block & line break tags to newlines to preserve sentence and paragraph boundaries
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|tr|h[1-6])>/gi, '\n\n')
+      .replace(/<(p|div|tr|h[1-6])[^>]*>/gi, '\n')
+      .replace(/<[^>]*>?/gm, ' ');
 
-    // 2. Strip HTML tags to get pure text stream
-    const clean = decoded.replace(/<[^>]*>?/gm, ' ');
+    // 2. Locate "വരദാനം" strictly when it appears as a section heading.
+    // Must be preceded by non-letter / start-of-line / whitespace,
+    // and followed strictly by heading punctuation (":-", ": -", "-:", ":", "-", "–").
+    // Must NOT match mid-sentence words.
+    const headingRegex =
+      /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/iu;
 
-    // 3. Extract the Vardan block between the Vardan heading and following sections
-    const regex =
-      /(?:വരദാനം|വരദാനം\s*:|വരദാനം\s*:-|वरदान|वरदान\s*:|वरदान\s*:-|Varadan|Blessing)\s*[:\-–]?\s*([\s\S]*?)(?=(?:വിശദീകരണം|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|സ്ലോഗൻ\s*:|സ്ലോഗന്\s*:-|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/i;
+    let contentToParse = text;
+    const match = text.match(headingRegex);
+    if (match && match[1]) {
+      contentToParse = match[1];
+    } else if (/^(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)/i.test(text.trim())) {
+      contentToParse = text
+        .trim()
+        .replace(/^(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*/iu, '');
+    }
 
-    const match = clean.match(regex);
-    if (!match || !match[1]) return FALLBACK_VARADAN_ML;
+    // 3. Trim leading hyphens, colons, or whitespace
+    let remaining = contentToParse.replace(/^[:\-–\s]+/, '').trim();
 
-    let vardan = (match[1] || '')
+    // 4. Extract ONLY the first title sentence immediately following it:
+    // - Check for blessing benediction word ('ഭവിക്കട്ടെ', 'ആകട്ടെ', 'ഭവ:', 'भव')
+    // - Stop strictly at the first full stop (.) or sentence terminator, or paragraph break
+    let titleSentence = '';
+    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.!\u0964]?)/i);
+    if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
+      titleSentence = benedictionMatch[1].trim();
+    } else {
+      const stopMatch = remaining.match(/^([\s\S]*?(?:[.!\u0964]|\n\s*\n))/);
+      if (stopMatch && stopMatch[1] && stopMatch[1].trim().length > 15) {
+        titleSentence = stopMatch[1].trim();
+      } else {
+        const dotIdx = remaining.indexOf('.');
+        titleSentence = dotIdx !== -1 ? remaining.slice(0, dotIdx + 1).trim() : remaining;
+      }
+    }
+
+    // Clean formatting and trim leading punctuation
+    titleSentence = titleSentence
       .replace(/^[:\-–\s]+/, '')
       .replace(/\s+/g, ' ')
       .trim();
 
-    // 4. Extract the primary divine blessing sentence ending with 'ഭവിക്കട്ടെ.', 'ആകട്ടെ.', 'ഭവ:', or 'भव।'
-    const sentenceMatch = vardan.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.।]?)/i);
-    if (sentenceMatch && sentenceMatch[1] && sentenceMatch[1].trim().length > 15) {
-      vardan = sentenceMatch[1].trim();
+    if (titleSentence && !/[.!\u0964]$/.test(titleSentence)) {
+      titleSentence += '.';
     }
 
-    return vardan && vardan.length > 15 ? vardan : FALLBACK_VARADAN_ML;
+    return titleSentence && titleSentence.length > 15 ? titleSentence : FALLBACK_VARADAN_ML;
   } catch (err) {
     console.warn('[VardanService] extractVardanFromHtml error:', err);
     return FALLBACK_VARADAN_ML;
@@ -81,6 +115,10 @@ export async function fetchDailyVardanFromMurli(forceRefresh = false): Promise<s
         const cached = getDateStampedJSON<any>(cacheKey, targetDate, null);
         const cachedStr = typeof cached === 'string' ? cached : cached?.textMl || cached?.vardan || '';
         if (cachedStr && typeof cachedStr === 'string' && cachedStr.trim().length > 15 && cachedStr !== FALLBACK_VARADAN_ML) {
+          const sanitized = extractVardanFromHtml(cachedStr);
+          if (sanitized && sanitized.length > 15 && sanitized !== FALLBACK_VARADAN_ML) {
+            return sanitized;
+          }
           return cachedStr.trim();
         }
       } catch {

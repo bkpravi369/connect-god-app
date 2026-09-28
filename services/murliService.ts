@@ -571,20 +571,37 @@ export function extractVaradanSnippet(rawText: string, isMalayalam = true): stri
     return isMalayalam ? DEFAULT_VARADAN.textMl : DEFAULT_VARADAN.text;
   }
 
-  const pattern = isMalayalam
-    ? /(?:വരദാനം|വരദാനം\s*\(Blessing\)):?\s*([\s\S]*?)(?=(?:\n\s*വിശദീകരണം|\n\s*സ്ലോഗൻ|\n\s*Slogan|$))/i
-    : /(?:Blessing|Varadan|वरदान):?\s*([\s\S]*?)(?=(?:\n\s*Explanation|स्पष्टीकरण|\n\s*Slogan|स्लोगन|$))/i;
+  const clean = rawText
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6])>/gi, '\n\n')
+    .replace(/<(p|div|tr|h[1-6])[^>]*>/gi, '\n')
+    .replace(/<[^>]*>?/gm, ' ');
 
-  const match = rawText.match(pattern);
+  const headingRegex =
+    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/iu;
+
+  const match = clean.match(headingRegex);
   if (match && match[1]) {
-    const rawSnippet = match[1].trim();
-    const lines = rawSnippet
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    if (lines.length > 0) {
-      return lines.slice(0, 3).join(' ');
+    let remaining = match[1].replace(/^[:\-–\s]+/, '').trim();
+    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.!\u0964]?)/i);
+    let titleSentence = '';
+    if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
+      titleSentence = benedictionMatch[1].trim();
+    } else {
+      const stopMatch = remaining.match(/^([\s\S]*?(?:[.!\u0964]|\n\s*\n))/);
+      if (stopMatch && stopMatch[1] && stopMatch[1].trim().length > 15) {
+        titleSentence = stopMatch[1].trim();
+      } else {
+        const dotIdx = remaining.indexOf('.');
+        titleSentence = dotIdx !== -1 ? remaining.slice(0, dotIdx + 1).trim() : remaining;
+      }
+    }
+    titleSentence = titleSentence.replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim();
+    if (titleSentence && !/[.!\u0964]$/.test(titleSentence)) {
+      titleSentence += '.';
+    }
+    if (titleSentence.length > 15) {
+      return titleSentence;
     }
   }
 
@@ -657,8 +674,8 @@ export function parseStructuredMurli(
 
   // 6. Blessing (വരദാനം / वरदान)
   const blessingPattern = isMalayalam
-    ? /(?:വരദാനം|വരദാനം\s*\(Blessing\)):?\s*([\s\S]*?)(?=(?:\n\s*സ്ലോഗൻ|\n\s*മാതേശ്വരി|$))/i
-    : /(?:Blessing|Varadan|वरदान):?\s*([\s\S]*?)(?=(?:\n\s*Slogan|स्लोगन|\n\s*Mateshwari|मातेश्वरी|$))/i;
+    ? /(?:^|\n)\s*(?:വരദാനം|വരദാനം\s*\(Blessing\))\s*(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*സ്ലോഗൻ|\n\s*മാതേശ്വരി|$))/i
+    : /(?:^|\n)\s*(?:Blessing|Varadan|वरदान)\s*(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*Slogan|स्लोगन|\n\s*Mateshwari|मातेश्वरी|$))/i;
   const blessingMatch = rawText.match(blessingPattern);
   const blessing = blessingMatch ? blessingMatch[1].trim() : (isMalayalam ? DEFAULT_VARADAN.textMl : DEFAULT_VARADAN.text);
 

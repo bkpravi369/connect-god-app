@@ -9,6 +9,39 @@ import { getTodayISTDateString, getFormattedMurliDate } from '@/services/murliSe
 export const DEFAULT_FALLBACK_VARADAN_TEXT =
   'സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി, മാസ്റ്റർ ദാതാവായി മാറി സർവ്വ ആത്മാക്കൾക്കും ശാന്തിയുടെയും ശക്തിയുടെയും ദാനം നൽകുന്ന സദാ തൃപ്ത ആത്മാവായി ഭവിക്കട്ടെ.';
 
+export function cleanBlessingSentence(raw: string): string {
+  if (!raw || typeof raw !== 'string') return DEFAULT_FALLBACK_VARADAN_TEXT;
+  let text = raw.replace(/^[:\-–\s]+/, '').trim();
+  // Strip section heading if present at the beginning
+  text = text.replace(
+    /^(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*/iu,
+    ''
+  );
+  text = text.replace(/^[:\-–\s]+/, '').trim();
+
+  // Extract ONLY the first title sentence stopping strictly at the very first full stop (.)
+  const benedictionMatch = text.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.!\u0964]?)/i);
+  if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
+    text = benedictionMatch[1].trim();
+  } else {
+    const stopMatch = text.match(/^([\s\S]*?(?:[.!\u0964]|\n\s*\n))/);
+    if (stopMatch && stopMatch[1] && stopMatch[1].trim().length > 15) {
+      text = stopMatch[1].trim();
+    } else {
+      const dotIdx = text.indexOf('.');
+      if (dotIdx !== -1) {
+        text = text.slice(0, dotIdx + 1).trim();
+      }
+    }
+  }
+
+  text = text.replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim();
+  if (text && !/[.!\u0964]$/.test(text)) {
+    text += '.';
+  }
+  return text.length > 15 ? text : DEFAULT_FALLBACK_VARADAN_TEXT;
+}
+
 type Props = {
   varadan?: Varadan | string | null;
   onReadFull?: () => void;
@@ -165,11 +198,13 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
   const todayDateStr = getTodayISTDateString();
   const { ddmmyy: formattedDate } = getFormattedMurliDate(todayDateStr);
 
-  const blessingText =
+  const rawBlessingText =
     (typeof varadan === 'string'
       ? varadan
       : varadan?.textMl || varadan?.text) ||
     DEFAULT_FALLBACK_VARADAN_TEXT;
+
+  const blessingText = cleanBlessingSentence(rawBlessingText);
 
   return (
     <Animated.View

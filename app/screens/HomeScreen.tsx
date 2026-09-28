@@ -30,7 +30,7 @@ import { ChannelSubPageModal } from '@/components/ChannelSubPageModal';
 import { ZoomJoinModal } from '@/components/ZoomJoinModal';
 import { useToast } from '@/components/ToastProvider';
 import type { AutoContentResult } from '@/lib/auto-content';
-import { fetchDailyVardanFromMurli, FALLBACK_VARADAN_ML } from '@/services/vardanService';
+import { fetchDailyVardanFromMurli, extractVardanFromHtml, FALLBACK_VARADAN_ML } from '@/services/vardanService';
 
 type Props = {
   varadan?: Varadan | null;
@@ -184,10 +184,11 @@ export default function HomeScreen({
   const featuredList = useMemo(() => build2x2Videos(autoContent), [autoContent]);
 
   const effectiveVaradan: Varadan = useMemo(() => {
-    const resolvedText =
+    const rawText =
       (extractedVardan && extractedVardan.trim().length > 15 ? extractedVardan : '') ||
       (typeof varadan === 'string' ? varadan : varadan?.textMl || varadan?.text || '') ||
       FALLBACK_VARADAN_ML;
+    const resolvedText = extractVardanFromHtml(rawText);
 
     return {
       textMl: resolvedText,

@@ -674,9 +674,7 @@ public final class TrafficControlScheduler {
         Intent intent = alarmIntent(context, id).putExtra("id", id).putExtra("trigger", trigger);
         PendingIntent operation = PendingIntent.getBroadcast(context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        PendingIntent show = PendingIntent.getActivity(context, 0, new Intent(context, MainActivity.class),
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        alarmSetAlarmClock(context, trigger, show, operation);
+        alarmSetExactAndAllowWhileIdle(context, trigger, operation);
     }
 
     public static String dayKey(long millis) {

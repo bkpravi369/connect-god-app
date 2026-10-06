@@ -60,7 +60,7 @@ import {
   TRAFFIC_TRACK_SLOTS,
 } from '@/lib/constants';
 import { formatTime12h } from '@/lib/dates';
-import { getJSON, setJSON } from '@/lib/storage';
+import { getItem, setItem, getJSON, setJSON } from '@/lib/storage';
 import { useToast } from '@/components/ToastProvider';
 import {
   playTrafficSlot,
@@ -138,8 +138,43 @@ export default function TrafficControlScreen() {
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
   const [reportText, setReportText] = useState('');
 
+  const [batteryOptimizationIgnored, setBatteryOptimizationIgnored] = useState<boolean | null>(null);
+  const [showBatteryPromptModal, setShowBatteryPromptModal] = useState<boolean>(false);
+
+  const checkBatteryOptimization = async () => {
+    if (!isAndroidTrafficApp()) return;
+    try {
+      const res = await TrafficControlNative.isIgnoringBatteryOptimizations();
+      const isIgnoring = !!res?.isIgnoring;
+      setBatteryOptimizationIgnored(isIgnoring);
+      if (!isIgnoring) {
+        const hasPrompted = getItem('has_prompted_battery_opt_v1');
+        if (!hasPrompted) {
+          setShowBatteryPromptModal(true);
+        }
+      }
+    } catch (err) {
+      console.error('[TrafficControlScreen] checkBatteryOptimization error:', err);
+    }
+  };
+
+  const handleRequestBatteryExemption = async () => {
+    if (!isAndroidTrafficApp()) return;
+    try {
+      setItem('has_prompted_battery_opt_v1', 'true');
+      setShowBatteryPromptModal(false);
+      await TrafficControlNative.requestIgnoreBatteryOptimizations();
+      setTimeout(() => {
+        checkBatteryOptimization();
+      }, 1500);
+    } catch (err: any) {
+      toast.show('Failed to open battery settings: ' + (err?.message || err), 'info');
+    }
+  };
+
   const refreshAlarmStatus = () => {
     try {
+      checkBatteryOptimization();
       getTrafficAlarmDetailedStatus()
         .then((res) => {
           setDetailedStatus(res);
@@ -286,8 +321,18 @@ export default function TrafficControlScreen() {
       setActivePlayingSlot(slotKey);
     });
 
+    checkBatteryOptimization();
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refreshAlarmStatus();
+        checkBatteryOptimization();
+      }
+    });
+
     return () => {
       unsubscribe();
+      appStateSub.remove();
       stopTrafficAudio();
       stopCurrentAlarmPlayback();
       stopToneAudioPreview();
@@ -480,6 +525,36 @@ export default function TrafficControlScreen() {
               <Pressable onPress={handleOpenDiagnostics}>
                 <Text style={[styles.permissionLink, { color: COLORS.neutral[700] }]}>View Status & Logs</Text>
               </Pressable>
+            </View>
+
+            {/* Battery Optimization Whitelist Bar for OEM Devices */}
+            <View style={styles.batteryOptRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, flex: 1 }}>
+                <ShieldAlert
+                  color={batteryOptimizationIgnored ? '#15803d' : '#b45309'}
+                  size={18}
+                  strokeWidth={2.2}
+                  style={{ marginTop: 2 }}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.batteryOptTitle}>
+                    {batteryOptimizationIgnored ? 'Battery Saver: Unrestricted' : 'Battery Saver: Optimization Active'}
+                  </Text>
+                  <Text style={styles.batteryOptSub}>
+                    {batteryOptimizationIgnored
+                      ? 'Connect GOD can fire on-time alarms without being killed in background.'
+                      : 'Samsung, Xiaomi, Vivo, Oppo devices may silence alarms in deep sleep unless whitelisted.'}
+                  </Text>
+                </View>
+              </View>
+              {!batteryOptimizationIgnored && (
+                <Pressable
+                  style={({ pressed }) => [styles.batteryOptBtn, pressed && styles.btnPressed]}
+                  onPress={handleRequestBatteryExemption}
+                >
+                  <Text style={styles.batteryOptBtnText}>Whitelist</Text>
+                </Pressable>
+              )}
             </View>
           </View>
         )}
@@ -688,6 +763,48 @@ export default function TrafficControlScreen() {
           }}
         />
       )}
+
+      {/* One-Time Battery Optimization Prompt Modal */}
+      <Modal
+        visible={showBatteryPromptModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setItem('has_prompted_battery_opt_v1', 'true');
+          setShowBatteryPromptModal(false);
+        }}
+      >
+        <View style={styles.batteryModalOverlay}>
+          <View style={styles.batteryModalContent}>
+            <View style={styles.batteryModalIconWrap}>
+              <ShieldAlert color="#991b1b" size={32} strokeWidth={2.2} />
+            </View>
+            <Text style={styles.batteryModalTitle}>Reliable Background Alarms</Text>
+            <Text style={styles.batteryModalText}>
+              Many Android phones (Samsung, Xiaomi, Vivo, Oppo, OnePlus) aggressively kill background alarms during deep sleep.
+              {"\n\n"}
+              Please whitelist Connect GOD from battery optimization so your scheduled Traffic Control meditation songs play reliably on time.
+            </Text>
+            <View style={styles.batteryModalActions}>
+              <Pressable
+                style={({ pressed }) => [styles.batteryModalSecondaryBtn, pressed && styles.btnPressed]}
+                onPress={() => {
+                  setItem('has_prompted_battery_opt_v1', 'true');
+                  setShowBatteryPromptModal(false);
+                }}
+              >
+                <Text style={styles.batteryModalSecondaryText}>Later</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.batteryModalPrimaryBtn, pressed && styles.btnPressed]}
+                onPress={handleRequestBatteryExemption}
+              >
+                <Text style={styles.batteryModalPrimaryText}>Whitelist Now</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2347,6 +2464,109 @@ const styles = StyleSheet.create({
   retryBtnText: {
     fontFamily: FONTS.sansBold,
     fontSize: 12,
+    color: '#ffffff',
+  },
+  batteryOptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#fed7aa',
+  },
+  batteryOptTitle: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 12,
+    color: '#9a3412',
+  },
+  batteryOptSub: {
+    fontFamily: FONTS.sans,
+    fontSize: 11,
+    color: '#c2410c',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  batteryOptBtn: {
+    backgroundColor: '#ea580c',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.md,
+  },
+  batteryOptBtnText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 12,
+    color: '#ffffff',
+  },
+  batteryModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.xl,
+  },
+  batteryModalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: RADIUS['2xl'],
+    padding: SPACING.xl,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    ...SHADOWS.lg,
+  },
+  batteryModalIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: RADIUS.full,
+    backgroundColor: '#fee2e2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  batteryModalTitle: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 18,
+    color: COLORS.neutral[900],
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  batteryModalText: {
+    fontFamily: FONTS.sans,
+    fontSize: 13,
+    color: COLORS.neutral[600],
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: SPACING.lg,
+  },
+  batteryModalActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    width: '100%',
+  },
+  batteryModalSecondaryBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.neutral[100],
+    alignItems: 'center',
+  },
+  batteryModalSecondaryText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 14,
+    color: COLORS.neutral[700],
+  },
+  batteryModalPrimaryBtn: {
+    flex: 1.4,
+    paddingVertical: 12,
+    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.primary[700],
+    alignItems: 'center',
+  },
+  batteryModalPrimaryText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 14,
     color: '#ffffff',
   },
 });

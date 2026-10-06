@@ -53,7 +53,7 @@ public class TrafficControlAudioService extends Service {
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
         if (pm != null) {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ConnectGod:AudioServiceWakeLock");
-            wakeLock.acquire(30 * 60 * 1000L); // 30 min safety cap
+            wakeLock.acquire(2 * 60 * 1000L); // 2-minute safety timeout
         }
     }
 
@@ -175,7 +175,7 @@ public class TrafficControlAudioService extends Service {
             cleanupCurrentMediaPlayer();
 
             AudioAttributes attributes = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build();
 
@@ -203,7 +203,7 @@ public class TrafficControlAudioService extends Service {
             } else {
                 focus = audioManager.requestAudioFocus(
                     occurrenceListener,
-                    AudioManager.STREAM_ALARM,
+                    AudioManager.STREAM_MUSIC,
                     AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
                 );
             }

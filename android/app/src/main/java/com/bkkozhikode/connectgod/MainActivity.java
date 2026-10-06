@@ -1,5 +1,6 @@
 package com.bkkozhikode.connectgod;
 
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
@@ -19,6 +20,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(TrafficControlPlugin.class);
         super.onCreate(savedInstanceState);
+        this.setVolumeControlStream(AudioManager.STREAM_MUSIC);
 
         if (bridge != null && bridge.getWebView() != null) {
             WebView webView = bridge.getWebView();

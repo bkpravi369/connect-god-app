@@ -79,8 +79,8 @@ public class TrafficControlPlugin extends Plugin {
         result.put("exactAlarmsAllowed", TrafficControlScheduler.canSchedule(getContext()));
         result.put("version", 4);
         result.put("supportsCustomTones", true);
-        int vCode = 13;
-        String vName = "1.0.12";
+        int vCode = 14;
+        String vName = "1.0.13";
         try {
             Context ctx = getContext();
             android.content.pm.PackageInfo pInfo = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);

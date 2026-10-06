@@ -69,7 +69,7 @@ public class TrafficControlReceiver extends BroadcastReceiver {
         PowerManager.WakeLock wakeLock = null;
         if (pm != null) {
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ConnectGod:TrafficAlarmWakeLock");
-            wakeLock.acquire(20000); // 20s hold
+            wakeLock.acquire(2 * 60 * 1000L); // 2-minute safety timeout
         }
 
         try {

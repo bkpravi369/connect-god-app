@@ -30,7 +30,12 @@ import { ChannelSubPageModal } from '@/components/ChannelSubPageModal';
 import { ZoomJoinModal } from '@/components/ZoomJoinModal';
 import { useToast } from '@/components/ToastProvider';
 import type { AutoContentResult } from '@/lib/auto-content';
-import { fetchDailyVardanFromMurli, extractVardanFromHtml, FALLBACK_VARADAN_ML } from '@/services/vardanService';
+import {
+  fetchDailyVardanFromMurli,
+  extractVardanFromHtml,
+  FALLBACK_VARADAN_ML,
+  isMalayalamText,
+} from '@/services/vardanService';
 
 type Props = {
   varadan?: Varadan | null;
@@ -71,14 +76,14 @@ export default function HomeScreen({
   const [extractedVardan, setExtractedVardan] = useState<string>('');
   const [isVardanLoading, setIsVardanLoading] = useState<boolean>(true);
 
-  // Fetch today's live Vardan directly from Murli HTML on mount
+  // Fetch today's live Vardan directly from Murli HTML on mount (Strictly Malayalam)
   useEffect(() => {
     let isMounted = true;
     setIsVardanLoading(true);
 
     fetchDailyVardanFromMurli(false)
       .then((vardanText) => {
-        if (isMounted && vardanText && typeof vardanText === 'string') {
+        if (isMounted && vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText)) {
           setExtractedVardan(vardanText.trim());
         }
       })
@@ -98,7 +103,7 @@ export default function HomeScreen({
     setIsVardanLoading(true);
     fetchDailyVardanFromMurli(true)
       .then((vardanText) => {
-        if (vardanText && typeof vardanText === 'string') {
+        if (vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText)) {
           setExtractedVardan(vardanText.trim());
         }
       })
@@ -185,8 +190,10 @@ export default function HomeScreen({
 
   const effectiveVaradan: Varadan = useMemo(() => {
     const rawText =
-      (extractedVardan && extractedVardan.trim().length > 15 ? extractedVardan : '') ||
-      (typeof varadan === 'string' ? varadan : varadan?.textMl || varadan?.text || '') ||
+      (extractedVardan && isMalayalamText(extractedVardan) ? extractedVardan : '') ||
+      (typeof varadan === 'string'
+        ? (isMalayalamText(varadan) ? varadan : '')
+        : (varadan?.textMl && isMalayalamText(varadan.textMl) ? varadan.textMl : '')) ||
       FALLBACK_VARADAN_ML;
     const resolvedText = extractVardanFromHtml(rawText);
 

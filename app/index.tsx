@@ -42,6 +42,7 @@ import { clearYouTubeCache } from '@/services/youtube';
 import { fetchDriveAudioPlaylist, driveTracksToMeditationItems } from '@/services/mediaService';
 import { initNotificationService } from '@/services/notificationService';
 import { downloadAndCacheAllTrafficTracks } from '@/services/trafficAudioService';
+import { isMalayalamText } from '@/services/vardanService';
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>('home');
@@ -57,7 +58,7 @@ export default function App() {
   const [varadan, setVaradan] = useState<Varadan>(() => {
     const today = getTodayISTDateString();
     const saved = getDateStampedJSON<Varadan | null>(STORAGE_KEYS.varadan, today, null);
-    if (saved && saved.textMl && saved.textMl !== DEFAULT_VARADAN.textMl) return saved;
+    if (saved && saved.textMl && isMalayalamText(saved.textMl) && saved.textMl !== DEFAULT_VARADAN.textMl) return saved;
     return {
       textMl: todayBlessing.varadanText || initialMurli.varadanSnippetMl,
       text: initialMurli.varadanSnippetEn,
@@ -84,7 +85,7 @@ export default function App() {
     try {
       clearYouTubeCache();
       const murliData = await fetchDailyMurli(undefined, true).catch(() => null);
-      if (murliData && murliData.varadanSnippetMl) {
+      if (murliData && murliData.varadanSnippetMl && isMalayalamText(murliData.varadanSnippetMl)) {
         setVaradan({
           textMl: murliData.varadanSnippetMl,
           text: murliData.varadanSnippetEn,
@@ -119,7 +120,7 @@ export default function App() {
     setContacts(getJSON(STORAGE_KEYS.contacts, DEFAULT_CONTACTS));
     
     const savedVaradan = getDateStampedJSON<Varadan | null>(STORAGE_KEYS.varadan, today, null);
-    if (savedVaradan && savedVaradan.textMl) {
+    if (savedVaradan && savedVaradan.textMl && isMalayalamText(savedVaradan.textMl)) {
       setVaradan(savedVaradan);
     }
     
@@ -138,7 +139,7 @@ export default function App() {
     // Fetch daily Murli & Varadan extraction
     fetchDailyMurli()
       .then((data) => {
-        if (data && data.varadanSnippetMl) {
+        if (data && data.varadanSnippetMl && isMalayalamText(data.varadanSnippetMl)) {
           setVaradan({
             textMl: data.varadanSnippetMl,
             text: data.varadanSnippetEn,
@@ -225,9 +226,11 @@ export default function App() {
     }
   }, []);
 
-  // When auto content arrives, update varadan if auto-extracted
+  // When auto content arrives, update varadan if auto-extracted (Strictly Malayalam)
   const effectiveVaradan: Varadan =
-    autoContent?.varadan && autoContent.varadan.textMl ? autoContent.varadan : varadan;
+    autoContent?.varadan && autoContent.varadan.textMl && isMalayalamText(autoContent.varadan.textMl)
+      ? autoContent.varadan
+      : varadan;
 
   const fade = useState(new Animated.Value(1))[0];
   const slideY = useState(new Animated.Value(0))[0];

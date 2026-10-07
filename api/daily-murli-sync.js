@@ -135,13 +135,13 @@ function extractMalayalamSections(htmlOrText) {
     .replace(/<[^>]*>?/gm, ' ');
 
   const headingRegex =
-    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/iu;
+    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/iu;
 
   let rawVaradan = '';
   const varadanMatch = clean.match(headingRegex);
   if (varadanMatch && varadanMatch[1]) {
     let remaining = varadanMatch[1].replace(/^[:\-–\s]+/, '').trim();
-    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.!\u0964]?)/i);
+    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:)[.!\u0964]?)/i);
     if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
       rawVaradan = benedictionMatch[1].trim();
     } else {

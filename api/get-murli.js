@@ -32,7 +32,7 @@ function sanitizeHtmlContent(rawHtml) {
   return html.trim();
 }
 
-function extractVardanText(rawHtml) {
+function extractVardanText(rawHtml, lang = 'ml') {
   if (!rawHtml || typeof rawHtml !== 'string') return '';
   const decoded = rawHtml
     .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
@@ -44,14 +44,17 @@ function extractVardanText(rawHtml) {
     .replace(/&gt;/gi, '>')
     // Convert block & line break tags to newlines to preserve sentence and paragraph boundaries
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|h[1-6])>/gi, '\n\n')
-    .replace(/<(p|div|tr|h[1-6])[^>]*>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6]|font|span)>/gi, '\n')
+    .replace(/<(p|div|tr|h[1-6])[^>]*>/gi, '\n\n')
     .replace(/<[^>]*>?/gm, ' ');
 
-  // 1. Locate "വരദാനം" strictly when it appears as a section heading (e.g. "വരദാനം :-", "വരദാനം:").
-  // Do not match mid-sentence words.
+  // 1. Locate heading strictly when it appears as a section heading (e.g. "വരദാനം :-", "വരദാനം:").
+  // Do not match mid-sentence words in discourse.
+  // Note: 'അവ്യക്ത' is intentionally excluded from delimiters because Malayalam blessings frequently use the word 'അവ്യക്ത'.
   const headingRegex =
-    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/iu;
+    lang === 'ml'
+      ? /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/iu
+      : /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|धारणा|स्पष्टीकरण|$))/iu;
 
   let contentToParse = decoded;
   const match = decoded.match(headingRegex);
@@ -68,16 +71,18 @@ function extractVardanText(rawHtml) {
 
   // 3. Extract ONLY the first title sentence immediately following it, stopping strictly at the very first full stop (.)
   let titleSentence = '';
-  const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.!\u0964]?)/i);
+  const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:|भव)[.!\u0964]?)/i);
   if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
     titleSentence = benedictionMatch[1].trim();
   } else {
-    const stopMatch = remaining.match(/^([\s\S]*?(?:[.!\u0964]|\n\s*\n))/);
-    if (stopMatch && stopMatch[1] && stopMatch[1].trim().length > 15) {
-      titleSentence = stopMatch[1].trim();
+    const dotIdx = remaining.indexOf('.');
+    const newlineIdx = remaining.indexOf('\n');
+    if (dotIdx !== -1 && (newlineIdx === -1 || dotIdx < newlineIdx)) {
+      titleSentence = remaining.slice(0, dotIdx + 1).trim();
+    } else if (newlineIdx !== -1) {
+      titleSentence = remaining.slice(0, newlineIdx).trim();
     } else {
-      const dotIdx = remaining.indexOf('.');
-      titleSentence = dotIdx !== -1 ? remaining.slice(0, dotIdx + 1).trim() : remaining;
+      titleSentence = remaining.trim();
     }
   }
 
@@ -88,6 +93,12 @@ function extractVardanText(rawHtml) {
 
   if (titleSentence && !/[.!\u0964]$/.test(titleSentence)) {
     titleSentence += '.';
+  }
+
+  if (lang === 'ml') {
+    const hasMalayalam = /[\u0D00-\u0D7F]/.test(titleSentence);
+    const hasHindi = /[\u0900-\u097F]/.test(titleSentence);
+    if (!hasMalayalam || hasHindi) return '';
   }
 
   return titleSentence.length > 15 ? titleSentence : '';
@@ -162,7 +173,7 @@ export default async function handler(req, res) {
         const rawText = await response.text();
         if (rawText && rawText.length > 200) {
           const cleanedHtml = sanitizeHtmlContent(rawText);
-          const vardan = extractVardanText(rawText);
+          const vardan = extractVardanText(rawText, lang);
           return res.status(200).json({
             success: true,
             lang,

@@ -573,27 +573,29 @@ export function extractVaradanSnippet(rawText: string, isMalayalam = true): stri
 
   const clean = rawText
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|h[1-6])>/gi, '\n\n')
-    .replace(/<(p|div|tr|h[1-6])[^>]*>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6]|font|span)>/gi, '\n')
+    .replace(/<(p|div|tr|h[1-6])[^>]*>/gi, '\n\n')
     .replace(/<[^>]*>?/gm, ' ');
 
   const headingRegex =
-    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|അവ്യക്ത|धारणा|स्पष्टीकरण|$))/iu;
+    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|धारणा|स्पष्टीकरण|$))/iu;
 
   const match = clean.match(headingRegex);
   if (match && match[1]) {
     let remaining = match[1].replace(/^[:\-–\s]+/, '').trim();
-    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ആകട്ടെ|ഭവ:|भव)[.!\u0964]?)/i);
+    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:|भव)[.!\u0964]?)/i);
     let titleSentence = '';
     if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
       titleSentence = benedictionMatch[1].trim();
     } else {
-      const stopMatch = remaining.match(/^([\s\S]*?(?:[.!\u0964]|\n\s*\n))/);
-      if (stopMatch && stopMatch[1] && stopMatch[1].trim().length > 15) {
-        titleSentence = stopMatch[1].trim();
+      const dotIdx = remaining.indexOf('.');
+      const newlineIdx = remaining.indexOf('\n');
+      if (dotIdx !== -1 && (newlineIdx === -1 || dotIdx < newlineIdx)) {
+        titleSentence = remaining.slice(0, dotIdx + 1).trim();
+      } else if (newlineIdx !== -1) {
+        titleSentence = remaining.slice(0, newlineIdx).trim();
       } else {
-        const dotIdx = remaining.indexOf('.');
-        titleSentence = dotIdx !== -1 ? remaining.slice(0, dotIdx + 1).trim() : remaining;
+        titleSentence = remaining.trim();
       }
     }
     titleSentence = titleSentence.replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim();

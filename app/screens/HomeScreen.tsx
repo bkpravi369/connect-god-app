@@ -35,6 +35,7 @@ import {
   extractVardanFromHtml,
   FALLBACK_VARADAN_ML,
   isMalayalamText,
+  isGenericVaradan,
 } from '@/services/vardanService';
 
 type Props = {
@@ -76,14 +77,14 @@ export default function HomeScreen({
   const [extractedVardan, setExtractedVardan] = useState<string>('');
   const [isVardanLoading, setIsVardanLoading] = useState<boolean>(true);
 
-  // Fetch today's live Vardan directly from Murli HTML on mount (Strictly Malayalam)
+  // Fetch today's live Vardan directly from Murli HTML on mount (Strictly Malayalam, Force Fresh Daily Fetch)
   useEffect(() => {
     let isMounted = true;
     setIsVardanLoading(true);
 
-    fetchDailyVardanFromMurli(false)
+    fetchDailyVardanFromMurli(true)
       .then((vardanText) => {
-        if (isMounted && vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText)) {
+        if (isMounted && vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText) && !isGenericVaradan(vardanText)) {
           setExtractedVardan(vardanText.trim());
         }
       })
@@ -103,7 +104,7 @@ export default function HomeScreen({
     setIsVardanLoading(true);
     fetchDailyVardanFromMurli(true)
       .then((vardanText) => {
-        if (vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText)) {
+        if (vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText) && !isGenericVaradan(vardanText)) {
           setExtractedVardan(vardanText.trim());
         }
       })
@@ -190,12 +191,12 @@ export default function HomeScreen({
 
   const effectiveVaradan: Varadan = useMemo(() => {
     const rawText =
-      (extractedVardan && isMalayalamText(extractedVardan) ? extractedVardan : '') ||
+      (extractedVardan && isMalayalamText(extractedVardan) && !isGenericVaradan(extractedVardan) ? extractedVardan : '') ||
       (typeof varadan === 'string'
-        ? (isMalayalamText(varadan) ? varadan : '')
-        : (varadan?.textMl && isMalayalamText(varadan.textMl) ? varadan.textMl : '')) ||
-      FALLBACK_VARADAN_ML;
-    const resolvedText = extractVardanFromHtml(rawText);
+        ? (isMalayalamText(varadan) && !isGenericVaradan(varadan) ? varadan : '')
+        : (varadan?.textMl && isMalayalamText(varadan.textMl) && !isGenericVaradan(varadan.textMl) ? varadan.textMl : '')) ||
+      '';
+    const resolvedText = rawText ? extractVardanFromHtml(rawText) : '';
 
     return {
       textMl: resolvedText,
@@ -228,7 +229,7 @@ export default function HomeScreen({
           onReadFull={onMurliPress}
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
-          isLoading={isVardanLoading && !extractedVardan}
+          isLoading={isVardanLoading || !effectiveVaradan.textMl || isGenericVaradan(effectiveVaradan.textMl)}
         />
       </Animated.View>
 

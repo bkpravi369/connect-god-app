@@ -822,26 +822,41 @@ export async function fetchDailyMurli(dateStr?: string, forceRefresh = false): P
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timeoutId = controller ? setTimeout(() => controller.abort(), 4000) : null;
     
-    // Primary: Official Madhuban Murli Malayalam daily endpoint
-    let res = await fetch(`https://madhubanmurli.org/murlis/malayalam/${targetDate}.html`, {
+    // Primary: Official live Vercel proxy
+    let res = await fetch(`/api/get-murli?lang=ml&date=${encodeURIComponent(dateInfo.ddmmyy)}&date_ymd=${encodeURIComponent(targetDate)}`, {
       signal: controller?.signal,
     }).catch(() => null);
 
-    // Secondary fallback: BabaMurli live API
     if (!res || !res.ok) {
-      res = await fetch(`https://babamurli.com/feed/daily-murli?date=${targetDate}&lang=ml`, {
+      res = await fetch(`https://connect-god-app.vercel.app/api/get-murli?lang=ml&date=${encodeURIComponent(dateInfo.ddmmyy)}&date_ymd=${encodeURIComponent(targetDate)}`, {
+        signal: controller?.signal,
+      }).catch(() => null);
+    }
+
+    if (!res || !res.ok) {
+      res = await fetch(`https://www.babamurli.com/01.%20Daily%20Murli/06.%20Malayalam/01.%20Malayalam%20Murli%20-%20Htm/${dateInfo.ddmmyy}-Mal.htm`, {
         signal: controller?.signal,
       }).catch(() => null);
     }
 
     if (timeoutId) clearTimeout(timeoutId);
     if (res && res.ok) {
-      const text = await res.text();
-      if (text && text.length > 100) {
-        // Strip any HTML tags if returned as HTML
-        const cleanText = text.replace(/<[^>]*>?/gm, '').trim();
-        if (cleanText.length > 100) {
-          rawMl = cleanText;
+      const contentType = res.headers?.get?.('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const json = await res.json().catch(() => null);
+        if (json?.html && typeof json.html === 'string' && json.html.length > 100) {
+          const cleanText = json.html.replace(/<[^>]*>?/gm, '').trim();
+          if (cleanText.length > 100) {
+            rawMl = cleanText;
+          }
+        }
+      } else {
+        const text = await res.text().catch(() => '');
+        if (text && text.length > 100) {
+          const cleanText = text.replace(/<[^>]*>?/gm, '').trim();
+          if (cleanText.length > 100) {
+            rawMl = cleanText;
+          }
         }
       }
     }

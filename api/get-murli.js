@@ -115,7 +115,7 @@ function getTodayISTDateString() {
 }
 
 export default async function handler(req, res) {
-  // CORS Headers
+  // CORS & Strict Cache-Control Headers to ensure completely fresh daily fetches
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,HEAD');
@@ -123,9 +123,10 @@ export default async function handler(req, res) {
     'Access-Control-Allow-Headers',
     'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
   );
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
@@ -139,7 +140,23 @@ export default async function handler(req, res) {
       ? 'en'
       : 'ml';
 
-  const date = req.query?.date || getTodayISTDateString();
+  // Support date in either DD.MM.YY or YYYY-MM-DD (e.g. 2026-10-07)
+  let rawDate = req.query?.date || req.query?.date_ymd || getTodayISTDateString();
+  let date = rawDate;
+  let dateYmd = '';
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    dateYmd = rawDate;
+    const [yyyy, mm, dd] = rawDate.split('-');
+    date = `${dd}.${mm}.${yyyy.slice(-2)}`;
+  } else if (/^\d{2}\.\d{2}\.\d{2}$/.test(rawDate)) {
+    const [dd, mm, yy] = rawDate.split('.');
+    dateYmd = `20${yy}-${mm}-${dd}`;
+  } else {
+    date = getTodayISTDateString();
+    const [dd, mm, yy] = date.split('.');
+    dateYmd = `20${yy}-${mm}-${dd}`;
+  }
 
   const candidates =
     lang === 'hi'
@@ -162,10 +179,13 @@ export default async function handler(req, res) {
   for (const url of candidates) {
     try {
       const response = await fetch(url, {
+        cache: 'no-store',
         headers: {
           'User-Agent':
             'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Cache-Control': 'no-cache, no-store',
+          Pragma: 'no-cache',
         },
       });
 
@@ -178,6 +198,7 @@ export default async function handler(req, res) {
             success: true,
             lang,
             date,
+            date_ymd: dateYmd,
             sourceUrl: url,
             html: cleanedHtml,
             vardan,

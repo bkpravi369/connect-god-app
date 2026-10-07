@@ -6,13 +6,13 @@ import { FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import { Varadan } from '@/lib/constants';
 import { getTodayISTDateString, getFormattedMurliDate } from '@/services/murliService';
 
-import { isMalayalamText } from '@/services/vardanService';
+import { isMalayalamText, isGenericVaradan } from '@/services/vardanService';
 
 export const DEFAULT_FALLBACK_VARADAN_TEXT =
   'സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി, മാസ്റ്റർ ദാതാവായി മാറി സർവ്വ ആത്മാക്കൾക്കും ശാന്തിയുടെയും ശക്തിയുടെയും ദാനം നൽകുന്ന സദാ തൃപ്ത ആത്മാവായി ഭവിക്കട്ടെ.';
 
 export function cleanBlessingSentence(raw: string): string {
-  if (!raw || typeof raw !== 'string') return DEFAULT_FALLBACK_VARADAN_TEXT;
+  if (!raw || typeof raw !== 'string') return '';
   let text = raw.replace(/^[:\-–\s]+/, '').trim();
   // Strip section heading if present at the beginning (Strictly Malayalam)
   text = text.replace(
@@ -41,7 +41,7 @@ export function cleanBlessingSentence(raw: string): string {
   if (text && !/[.!\u0964]$/.test(text)) {
     text += '.';
   }
-  return isMalayalamText(text) && text.length > 15 ? text : DEFAULT_FALLBACK_VARADAN_TEXT;
+  return isMalayalamText(text) && text.length > 15 && !isGenericVaradan(text) ? text : '';
 }
 
 type Props = {
@@ -202,11 +202,12 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
 
   const rawBlessingText =
     (typeof varadan === 'string'
-      ? (isMalayalamText(varadan) ? varadan : '')
-      : (varadan?.textMl && isMalayalamText(varadan.textMl) ? varadan.textMl : '')) ||
-    DEFAULT_FALLBACK_VARADAN_TEXT;
+      ? (isMalayalamText(varadan) && !isGenericVaradan(varadan) ? varadan : '')
+      : (varadan?.textMl && isMalayalamText(varadan.textMl) && !isGenericVaradan(varadan.textMl) ? varadan.textMl : '')) ||
+    '';
 
   const blessingText = cleanBlessingSentence(rawBlessingText);
+  const shouldShowLoading = Boolean(isLoading || !blessingText || isGenericVaradan(blessingText));
 
   return (
     <Animated.View
@@ -248,7 +249,7 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
         </View>
 
         {/* Dynamic / Editable Blessing Text or Loading Skeleton */}
-        {isLoading ? (
+        {shouldShowLoading ? (
           <View style={styles.skeletonContainer}>
             <Animated.View style={[styles.skeletonLine, { width: '92%', opacity: skeletonPulse }]} />
             <Animated.View style={[styles.skeletonLine, { width: '98%', opacity: skeletonPulse }]} />
@@ -266,7 +267,7 @@ export function VaradanCard({ varadan, onReadFull, onRefresh, isRefreshing, isLo
         >
           <BookOpen color="#92400e" size={14} strokeWidth={2.4} />
           <Text style={styles.portalBtnText}>
-            {isLoading ? 'മുരളി ലോഡ് ചെയ്യുന്നു...' : 'സമ്പൂർണ്ണ മുരളി വായിക്കുക'}
+            {shouldShowLoading ? 'മുരളി ലോഡ് ചെയ്യുന്നു...' : 'സമ്പൂർണ്ണ മുരളി വായിക്കുക'}
           </Text>
           <ExternalLink color="#92400e" size={13} strokeWidth={2.4} />
         </Pressable>

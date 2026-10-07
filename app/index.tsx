@@ -32,7 +32,7 @@ import {
   ZoomConfig,
   Channel,
 } from '@/lib/constants';
-import { getJSON, getDateStampedJSON, purgeStaleStorageKeys } from '@/lib/storage';
+import { getJSON, getDateStampedJSON, setDateStampedJSON, purgeStaleStorageKeys } from '@/lib/storage';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { fetchAutoContent, getCachedAutoContent, AutoContentResult } from '@/lib/auto-content';
 import { fetchDailyMurli, getCachedDailyMurli, getInitialDailyMurli, getTodayISTDateString } from '@/services/murliService';
@@ -42,7 +42,7 @@ import { clearYouTubeCache } from '@/services/youtube';
 import { fetchDriveAudioPlaylist, driveTracksToMeditationItems } from '@/services/mediaService';
 import { initNotificationService } from '@/services/notificationService';
 import { downloadAndCacheAllTrafficTracks } from '@/services/trafficAudioService';
-import { isMalayalamText } from '@/services/vardanService';
+import { isMalayalamText, isGenericVaradan, fetchDailyVardanFromMurli } from '@/services/vardanService';
 
 export default function App() {
   const [tab, setTab] = useState<TabKey>('home');
@@ -58,10 +58,10 @@ export default function App() {
   const [varadan, setVaradan] = useState<Varadan>(() => {
     const today = getTodayISTDateString();
     const saved = getDateStampedJSON<Varadan | null>(STORAGE_KEYS.varadan, today, null);
-    if (saved && saved.textMl && isMalayalamText(saved.textMl) && saved.textMl !== DEFAULT_VARADAN.textMl) return saved;
+    if (saved && saved.textMl && isMalayalamText(saved.textMl) && !isGenericVaradan(saved.textMl)) return saved;
     return {
-      textMl: todayBlessing.varadanText || initialMurli.varadanSnippetMl,
-      text: initialMurli.varadanSnippetEn,
+      textMl: '',
+      text: '',
       audioUrl: initialMurli.audioUrl,
     };
   });
@@ -84,8 +84,17 @@ export default function App() {
     setIsRefreshing(true);
     try {
       clearYouTubeCache();
-      const murliData = await fetchDailyMurli(undefined, true).catch(() => null);
-      if (murliData && murliData.varadanSnippetMl && isMalayalamText(murliData.varadanSnippetMl)) {
+      const [murliData, vardanLive] = await Promise.all([
+        fetchDailyMurli(undefined, true).catch(() => null),
+        fetchDailyVardanFromMurli(true).catch(() => ''),
+      ]);
+      if (vardanLive && isMalayalamText(vardanLive) && !isGenericVaradan(vardanLive)) {
+        setVaradan({
+          textMl: vardanLive.trim(),
+          text: vardanLive.trim(),
+          audioUrl: murliData?.audioUrl || '',
+        });
+      } else if (murliData && murliData.varadanSnippetMl && isMalayalamText(murliData.varadanSnippetMl) && !isGenericVaradan(murliData.varadanSnippetMl)) {
         setVaradan({
           textMl: murliData.varadanSnippetMl,
           text: murliData.varadanSnippetEn,
@@ -120,7 +129,7 @@ export default function App() {
     setContacts(getJSON(STORAGE_KEYS.contacts, DEFAULT_CONTACTS));
     
     const savedVaradan = getDateStampedJSON<Varadan | null>(STORAGE_KEYS.varadan, today, null);
-    if (savedVaradan && savedVaradan.textMl && isMalayalamText(savedVaradan.textMl)) {
+    if (savedVaradan && savedVaradan.textMl && isMalayalamText(savedVaradan.textMl) && !isGenericVaradan(savedVaradan.textMl)) {
       setVaradan(savedVaradan);
     }
     
@@ -129,6 +138,24 @@ export default function App() {
     setMurliConfig(getJSON(STORAGE_KEYS.murliConfig, DEFAULT_MURLI_CONFIG));
     setZoomConfig(getJSON(STORAGE_KEYS.zoomConfig, DEFAULT_ZOOM_CONFIG));
 
+    // Force fresh daily fetch of today's live Varadan
+    fetchDailyVardanFromMurli(true)
+      .then((vardanText) => {
+        if (vardanText && isMalayalamText(vardanText) && !isGenericVaradan(vardanText)) {
+          setVaradan((prev) => ({
+            ...prev,
+            textMl: vardanText.trim(),
+            text: vardanText.trim(),
+          }));
+          setDateStampedJSON(STORAGE_KEYS.varadan, today, {
+            textMl: vardanText.trim(),
+            text: vardanText.trim(),
+            audioUrl: '',
+          });
+        }
+      })
+      .catch(() => {});
+
     // Fetch daily Swaman
     fetchDailySwaman()
       .then((res) => {
@@ -136,15 +163,15 @@ export default function App() {
       })
       .catch(() => {});
 
-    // Fetch daily Murli & Varadan extraction
+    // Fetch daily Murli & Swaman extraction
     fetchDailyMurli()
       .then((data) => {
-        if (data && data.varadanSnippetMl && isMalayalamText(data.varadanSnippetMl)) {
-          setVaradan({
-            textMl: data.varadanSnippetMl,
-            text: data.varadanSnippetEn,
-            audioUrl: data.audioUrl,
-          });
+        if (data && data.varadanSnippetMl && isMalayalamText(data.varadanSnippetMl) && !isGenericVaradan(data.varadanSnippetMl)) {
+          setVaradan((prev) => ({
+            ...prev,
+            textMl: prev.textMl && !isGenericVaradan(prev.textMl) ? prev.textMl : data.varadanSnippetMl,
+            audioUrl: data.audioUrl || prev.audioUrl,
+          }));
         }
         if (data && data.fullTextMl) {
           fetchDailySwaman(data.date, data.fullTextMl)

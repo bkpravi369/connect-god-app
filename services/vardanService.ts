@@ -1,7 +1,7 @@
 import { getTodayISTDateString, getFormattedMurliDate } from './murliService';
 import { getDateStampedJSON, setDateStampedJSON } from '@/lib/storage';
 
-const VARDAN_CACHE_KEY = 'connectgod_extracted_vardan_v5';
+const VARDAN_CACHE_KEY = 'connectgod_extracted_vardan_v6';
 
 export const FALLBACK_VARADAN_ML =
   'സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി, മാസ്റ്റർ ദാതാവായി മാറി സർവ്വ ആത്മാക്കൾക്കും ശാന്തിയുടെയും ശക്തിയുടെയും ദാനം നൽകുന്ന സദാ തൃപ്ത ആത്മാവായി ഭവിക്കട്ടെ.';
@@ -17,17 +17,31 @@ export function isMalayalamText(str?: string | null): boolean {
 }
 
 /**
+ * Identifies and rejects generic, hardcoded, or outdated template blessings.
+ */
+export function isGenericVaradan(str?: string | null): boolean {
+  if (!str || typeof str !== 'string') return true;
+  const s = str.trim();
+  if (s.includes('സർവ്വ ഖജനാവുകളാലും സമ്പന്നമായി') || s.includes('സർവ്വ ഖജനാവുകളാലും')) return true;
+  if (s.includes('സ്വന്തം സ്മൃതി, മനോവൃത്തി') || s.includes('സ്മൃതി, മനോവൃത്തി')) return true;
+  if (s.includes('സാധാരണതയിലൂടെ') || s.includes('സാധാരണത')) return true;
+  return false;
+}
+
+/**
  * Robust extractor to isolate ONLY the Varadanam blessing title sentence from raw Murli HTML.
  * 1. Locates "വരദാനം" strictly when it appears as a section heading (e.g. "വരദാനം :-", "വരദാനം:").
  *    Mid-sentence words (e.g. in Sunday Murli discourse) are strictly ignored.
- * 2. Extracts ONLY the first title sentence immediately following it, stopping strictly at the very
+ * 2. If the input does not have a section heading but is already an extracted Malayalam blessing,
+ *    it cleans and formats the single sentence directly.
+ * 3. Extracts ONLY the first title sentence immediately following it, stopping strictly at the very
  *    first full stop (.) or sentence terminator, discarding the explanation paragraph below it.
- * 3. Trims leading hyphens, colons, or whitespace so only the clean single blessing title sentence is returned.
- * 4. Rejects Hindi / English and enforces Malayalam script.
+ * 4. Trims leading hyphens, colons, or whitespace so only the clean single blessing title sentence is returned.
+ * 5. Rejects Hindi / English and enforces Malayalam script.
  */
 export function extractVardanFromHtml(rawHtml: string): string {
   try {
-    if (!rawHtml || typeof rawHtml !== 'string') return FALLBACK_VARADAN_ML;
+    if (!rawHtml || typeof rawHtml !== 'string') return '';
 
     // 1. Safely decode numeric & named HTML entities
     let text = rawHtml
@@ -60,23 +74,24 @@ export function extractVardanFromHtml(rawHtml: string): string {
     // Must be preceded by non-letter / start-of-line / whitespace,
     // and followed strictly by heading punctuation (":-", ": -", "-:", ":", "-", "–").
     // Mid-sentence words in Murli discourse are strictly excluded.
-    // Note: 'അവ്യക്ത' is intentionally omitted from lookahead delimiters because blessing sentences
-    // frequently contain the word 'അവ്യക്ത' (e.g. 'അവ്യക്ത ശാന്ത സ്വരൂപത്തിലൂടെ...').
     const headingRegex =
-      /(?:^|[^\p{L}\p{N}])വരദാനം\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/iu;
+      /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/iu;
 
     let contentToParse = '';
     const match = text.match(headingRegex);
     if (match && match[1]) {
       contentToParse = match[1];
-    } else if (/^വരദാനം\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*/i.test(text.trim())) {
+    } else if (/^(?:വരദാനം|വരദാൻ)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*/iu.test(text.trim())) {
       contentToParse = text
         .trim()
-        .replace(/^വരദാനം\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*/i, '');
+        .replace(/^(?:വരദാനം|വരദാൻ)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*/iu, '');
+    } else if (!text.includes('വരദാനം') && isMalayalamText(text) && text.trim().length > 15) {
+      // Handles pre-extracted blessing sentences (e.g. from /api/get-murli)
+      contentToParse = text.trim();
     }
 
     if (!contentToParse) {
-      return FALLBACK_VARADAN_ML;
+      return '';
     }
 
     // 3. Trim leading hyphens, colons, or whitespace
@@ -111,35 +126,36 @@ export function extractVardanFromHtml(rawHtml: string): string {
       titleSentence += '.';
     }
 
-    if (isMalayalamText(titleSentence) && titleSentence.length > 15) {
+    if (isMalayalamText(titleSentence) && titleSentence.length > 15 && !isGenericVaradan(titleSentence)) {
       return titleSentence;
     }
 
-    return FALLBACK_VARADAN_ML;
+    return '';
   } catch (err) {
     console.warn('[VardanService] extractVardanFromHtml error:', err);
-    return FALLBACK_VARADAN_ML;
+    return '';
   }
 }
 
 /**
  * Asynchronously fetches today's live Murli HTML with cache busting and extracts ONLY the Vardan text.
  * Strictly consumes Malayalam language data and ignores Hindi/English.
+ * Appends a dynamic query parameter based on the current date (YYYY-MM-DD) to the fetch request URL.
  */
 export async function fetchDailyVardanFromMurli(forceRefresh = false): Promise<string> {
   try {
     const targetDate = getTodayISTDateString() || new Date().toISOString().split('T')[0];
     const { ddmmyy } = getFormattedMurliDate(targetDate);
-    const cacheKey = `${VARDAN_CACHE_KEY}_${ddmmyy || 'today'}`;
+    const cacheKey = `${VARDAN_CACHE_KEY}_${targetDate}`;
 
-    // 1. Return cached Vardan for instant 0-second loading if valid Malayalam and not force-refreshing
+    // 1. Return cached Vardan for instant 0-second loading if valid Malayalam, non-generic, and not force-refreshing
     if (!forceRefresh) {
       try {
         const cached = getDateStampedJSON<any>(cacheKey, targetDate, null);
         const cachedStr = typeof cached === 'string' ? cached : cached?.textMl || cached?.vardan || '';
-        if (cachedStr && typeof cachedStr === 'string' && cachedStr.trim().length > 15 && isMalayalamText(cachedStr)) {
+        if (cachedStr && typeof cachedStr === 'string' && cachedStr.trim().length > 15 && isMalayalamText(cachedStr) && !isGenericVaradan(cachedStr)) {
           const sanitized = extractVardanFromHtml(cachedStr);
-          if (sanitized && sanitized.length > 15 && isMalayalamText(sanitized) && sanitized !== FALLBACK_VARADAN_ML) {
+          if (sanitized && sanitized.length > 15 && isMalayalamText(sanitized) && !isGenericVaradan(sanitized)) {
             return sanitized;
           }
           return cachedStr.trim();
@@ -149,12 +165,13 @@ export async function fetchDailyVardanFromMurli(forceRefresh = false): Promise<s
       }
     }
 
-    // 2. Unique cache buster ensuring fresh fetch from live network
-    const cacheBuster = `t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    // 2. Dynamic cache buster with current date YYYY-MM-DD ensuring fresh fetch from live network
+    const cacheBuster = `date_ymd=${encodeURIComponent(targetDate)}&_t=${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     // Candidate URLs in priority order: STRICTLY MALAYALAM ONLY (No Hindi/English fallback)
     const candidates = [
       `/api/get-murli?lang=ml&date=${encodeURIComponent(ddmmyy)}&${cacheBuster}`,
+      `https://connect-god-app.vercel.app/api/get-murli?lang=ml&date=${encodeURIComponent(ddmmyy)}&${cacheBuster}`,
       `https://app.bkkozhikode.com/api/get-murli?lang=ml&date=${encodeURIComponent(ddmmyy)}&${cacheBuster}`,
       `https://www.babamurli.com/01.%20Daily%20Murli/06.%20Malayalam/01.%20Malayalam%20Murli%20-%20Htm/${ddmmyy}-Mal.htm?${cacheBuster}`,
       `https://www.babamurli.com/01.%20Daily%20Murli/06.%20Malayalam/01.%20Malayalam%20Murli%20-%20Htm/${ddmmyy}-Malayalam.htm?${cacheBuster}`,
@@ -165,7 +182,7 @@ export async function fetchDailyVardanFromMurli(forceRefresh = false): Promise<s
         const res = await fetch(url, {
           cache: 'no-store',
           headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
             Pragma: 'no-cache',
             Expires: '0',
           },
@@ -178,9 +195,9 @@ export async function fetchDailyVardanFromMurli(forceRefresh = false): Promise<s
 
         if (contentType.includes('application/json')) {
           const json = await res.json().catch(() => null);
-          if (json?.vardan && typeof json.vardan === 'string' && json.vardan.length > 15 && isMalayalamText(json.vardan)) {
+          if (json?.vardan && typeof json.vardan === 'string' && json.vardan.length > 15 && isMalayalamText(json.vardan) && !isGenericVaradan(json.vardan)) {
             const cleanTitle = extractVardanFromHtml(json.vardan);
-            if (cleanTitle && isMalayalamText(cleanTitle) && cleanTitle !== FALLBACK_VARADAN_ML) {
+            if (cleanTitle && isMalayalamText(cleanTitle) && !isGenericVaradan(cleanTitle)) {
               setDateStampedJSON(cacheKey, targetDate, cleanTitle);
               return cleanTitle;
             }
@@ -192,7 +209,7 @@ export async function fetchDailyVardanFromMurli(forceRefresh = false): Promise<s
 
         if (htmlContent && typeof htmlContent === 'string' && htmlContent.length > 100) {
           const extracted = extractVardanFromHtml(htmlContent);
-          if (extracted && extracted.length > 15 && isMalayalamText(extracted) && extracted !== FALLBACK_VARADAN_ML) {
+          if (extracted && extracted.length > 15 && isMalayalamText(extracted) && !isGenericVaradan(extracted)) {
             setDateStampedJSON(cacheKey, targetDate, extracted);
             return extracted;
           }
@@ -202,20 +219,20 @@ export async function fetchDailyVardanFromMurli(forceRefresh = false): Promise<s
       }
     }
 
-    // Check existing date stamped storage, verifying it is strictly Malayalam
+    // Check existing date stamped storage, verifying it is strictly Malayalam and non-generic
     try {
       const existing = getDateStampedJSON<any>(cacheKey, targetDate, null);
       const existingStr = typeof existing === 'string' ? existing : existing?.textMl || '';
-      if (existingStr && typeof existingStr === 'string' && existingStr.length > 15 && isMalayalamText(existingStr)) {
+      if (existingStr && typeof existingStr === 'string' && existingStr.length > 15 && isMalayalamText(existingStr) && !isGenericVaradan(existingStr)) {
         return existingStr;
       }
     } catch {
       // Safe continue
     }
 
-    return FALLBACK_VARADAN_ML;
+    return '';
   } catch (err) {
     console.warn('[VardanService] fetchDailyVardanFromMurli error:', err);
-    return FALLBACK_VARADAN_ML;
+    return '';
   }
 }

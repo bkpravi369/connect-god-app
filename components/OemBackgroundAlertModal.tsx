@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  ToastAndroid,
   View,
 } from 'react-native';
 import { ShieldAlert, ArrowRight, X } from 'lucide-react-native';
@@ -73,7 +75,14 @@ function OemBackgroundAlertModalInner({
 
   const handleSetupNow = async () => {
     try {
-      await requestOemBackgroundKillerProtection();
+      const res = await requestOemBackgroundKillerProtection();
+      if (Platform.OS === 'android') {
+        if (res?.openedType === 'app_settings') {
+          ToastAndroid.show('Please select Battery Saver -> No restrictions inside App info.', ToastAndroid.LONG);
+        } else {
+          ToastAndroid.show('Please allow background activity & disable battery restrictions.', ToastAndroid.LONG);
+        }
+      }
       if (onSetupSuccess) onSetupSuccess();
     } catch (err) {
       console.warn('[OemBackgroundAlertModal] Setup error:', err);
@@ -186,7 +195,14 @@ export function OemWarningCard({
       if (onSetupNow) {
         onSetupNow();
       } else {
-        await requestOemBackgroundKillerProtection();
+        const res = await requestOemBackgroundKillerProtection();
+        if (Platform.OS === 'android') {
+          if (res?.openedType === 'app_settings') {
+            ToastAndroid.show('Please select Battery Saver -> No restrictions inside App info.', ToastAndroid.LONG);
+          } else {
+            ToastAndroid.show('Please allow background activity & disable battery restrictions.', ToastAndroid.LONG);
+          }
+        }
       }
     } catch (err) {
       console.warn('[OemWarningCard] Setup error:', err);

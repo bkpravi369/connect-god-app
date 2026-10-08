@@ -175,7 +175,12 @@ export default function TrafficControlScreen() {
     try {
       setItem('has_prompted_battery_opt_v1', 'true');
       setShowBatteryPromptModal(false);
-      await requestOemBackgroundKillerProtection();
+      const res = await requestOemBackgroundKillerProtection();
+      if (res.openedType === 'app_settings') {
+        toast.show('Please select Battery Saver -> No restrictions inside App info.', 'info');
+      } else {
+        toast.show('Please allow background activity & disable battery saver.', 'info');
+      }
       setTimeout(() => {
         checkBatteryOptimization();
       }, 1500);

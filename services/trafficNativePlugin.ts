@@ -90,7 +90,7 @@ export interface TrafficControlNativePlugin {
   exportDiagnostics(): Promise<{ report: string }>;
   isIgnoringBatteryOptimizations(): Promise<{ isIgnoring: boolean }>;
   requestIgnoreBatteryOptimizations(): Promise<{ requested: boolean }>;
-  openOemBackgroundSettings(): Promise<{ success: boolean }>;
+  openOemBackgroundSettings(): Promise<{ success: boolean; openedType?: string; message?: string }>;
   getDeviceBrandName(): Promise<{ manufacturer: string; brandName: string }>;
   getSystemRingtones(): Promise<{ ringtones: SystemRingtone[] }>;
   pickCustomAudio(): Promise<ToneSelectionResult>;
@@ -123,18 +123,30 @@ export async function getDeviceBrandInfo(): Promise<{ manufacturer: string; bran
   }
 }
 
-export async function requestOemBackgroundKillerProtection(): Promise<boolean> {
-  if (!isAndroidTrafficApp()) return false;
+export interface OemSettingsResult {
+  success: boolean;
+  openedType: 'battery_saver' | 'autostart' | 'battery_dialog' | 'app_settings' | 'none';
+  message: string;
+}
+
+export async function requestOemBackgroundKillerProtection(): Promise<OemSettingsResult> {
+  if (!isAndroidTrafficApp()) {
+    return { success: false, openedType: 'none', message: 'Not running on Android native app' };
+  }
   try {
     const res = await TrafficControlNative.openOemBackgroundSettings();
-    return !!res?.success;
+    return {
+      success: !!res?.success,
+      openedType: (res?.openedType as any) || 'app_settings',
+      message: res?.message || 'Please select Battery Saver -> No restrictions inside App info.',
+    };
   } catch (err) {
     console.warn('[TrafficNativePlugin] openOemBackgroundSettings error, falling back to standard:', err);
     try {
       await TrafficControlNative.requestIgnoreBatteryOptimizations();
-      return true;
+      return { success: true, openedType: 'battery_dialog', message: 'Requested battery optimization dialog' };
     } catch {
-      return false;
+      return { success: false, openedType: 'none', message: 'Failed to open settings' };
     }
   }
 }

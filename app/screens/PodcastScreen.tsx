@@ -385,7 +385,12 @@ export default function PodcastScreen() {
             isExempted={false}
             onSetupNow={async () => {
               setItem('has_prompted_podcast_oem_opt_v1', 'true');
-              await requestOemBackgroundKillerProtection();
+              const res = await requestOemBackgroundKillerProtection();
+              if (res.openedType === 'app_settings') {
+                toast.show('Please select Battery Saver -> No restrictions inside App info.', 'info');
+              } else {
+                toast.show('Please allow background activity & disable battery restrictions.', 'info');
+              }
               TrafficControlNative.isIgnoringBatteryOptimizations()
                 .then((res) => {
                   setIsBatteryOptimized(!res?.isIgnoring);

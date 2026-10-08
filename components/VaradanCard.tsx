@@ -21,20 +21,19 @@ export function cleanBlessingSentence(raw: string): string {
   );
   text = text.replace(/^[:\-–\s]+/, '').trim();
 
-  // Extract ONLY the first title sentence stopping strictly at the very first full stop (.)
-  const benedictionMatch = text.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:)[.!\u0964]?)/i);
-  if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
-    text = benedictionMatch[1].trim();
+  // Extract ONLY the main blessing sentence stopping strictly at the very first full stop (.)
+  const benMatch = text.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:)[.!\u0964]?)/i);
+  const dotIdx = text.indexOf('.');
+
+  if (dotIdx !== -1 && (!benMatch || dotIdx <= benMatch[1].length)) {
+    text = text.slice(0, dotIdx + 1).trim();
+  } else if (benMatch && benMatch[1].trim().length > 15) {
+    text = benMatch[1].trim();
+  } else if (dotIdx !== -1) {
+    text = text.slice(0, dotIdx + 1).trim();
   } else {
-    const dotIdx = text.indexOf('.');
     const newlineIdx = text.indexOf('\n');
-    if (dotIdx !== -1 && (newlineIdx === -1 || dotIdx < newlineIdx)) {
-      text = text.slice(0, dotIdx + 1).trim();
-    } else if (newlineIdx !== -1) {
-      text = text.slice(0, newlineIdx).trim();
-    } else {
-      text = text.trim();
-    }
+    text = newlineIdx !== -1 ? text.slice(0, newlineIdx).trim() : text.trim();
   }
 
   text = text.replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim();

@@ -135,23 +135,24 @@ function extractMalayalamSections(htmlOrText) {
     .replace(/<[^>]*>?/gm, ' ');
 
   const headingRegex =
-    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/iu;
+    /(?:^|\n)\s*വരദാനം(?:\s*\(Blessing\))?\s*(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/i;
 
   let rawVaradan = '';
   const varadanMatch = clean.match(headingRegex);
   if (varadanMatch && varadanMatch[1]) {
     let remaining = varadanMatch[1].replace(/^[:\-–\s]+/, '').trim();
-    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:)[.!\u0964]?)/i);
-    if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
-      rawVaradan = benedictionMatch[1].trim();
+    const benMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:)[.!\u0964]?)/i);
+    const dotIdx = remaining.indexOf('.');
+
+    if (dotIdx !== -1 && (!benMatch || dotIdx <= benMatch[1].length)) {
+      rawVaradan = remaining.slice(0, dotIdx + 1).trim();
+    } else if (benMatch && benMatch[1].trim().length > 15) {
+      rawVaradan = benMatch[1].trim();
+    } else if (dotIdx !== -1) {
+      rawVaradan = remaining.slice(0, dotIdx + 1).trim();
     } else {
-      const stopMatch = remaining.match(/^([\s\S]*?(?:[.!\u0964]|\n\s*\n))/);
-      if (stopMatch && stopMatch[1] && stopMatch[1].trim().length > 15) {
-        rawVaradan = stopMatch[1].trim();
-      } else {
-        const dotIdx = remaining.indexOf('.');
-        rawVaradan = dotIdx !== -1 ? remaining.slice(0, dotIdx + 1).trim() : remaining;
-      }
+      const newlineIdx = remaining.indexOf('\n');
+      rawVaradan = newlineIdx !== -1 ? remaining.slice(0, newlineIdx).trim() : remaining.trim();
     }
     rawVaradan = rawVaradan.replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim();
     if (rawVaradan && !/[.!\u0964]$/.test(rawVaradan)) {

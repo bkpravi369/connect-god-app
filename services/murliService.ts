@@ -578,25 +578,24 @@ export function extractVaradanSnippet(rawText: string, isMalayalam = true): stri
     .replace(/<[^>]*>?/gm, ' ');
 
   const headingRegex =
-    /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|धारणा|स्पष्टीकरण|$))/iu;
+    /(?:^|\n)\s*(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|धारणा|स्पष्टीकरण|$))/iu;
 
   const match = clean.match(headingRegex);
   if (match && match[1]) {
     let remaining = match[1].replace(/^[:\-–\s]+/, '').trim();
-    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:|भव)[.!\u0964]?)/i);
+    const benMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:|भव)[.!\u0964]?)/i);
+    const dotIdx = remaining.indexOf('.');
     let titleSentence = '';
-    if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
-      titleSentence = benedictionMatch[1].trim();
+
+    if (dotIdx !== -1 && (!benMatch || dotIdx <= benMatch[1].length)) {
+      titleSentence = remaining.slice(0, dotIdx + 1).trim();
+    } else if (benMatch && benMatch[1].trim().length > 15) {
+      titleSentence = benMatch[1].trim();
+    } else if (dotIdx !== -1) {
+      titleSentence = remaining.slice(0, dotIdx + 1).trim();
     } else {
-      const dotIdx = remaining.indexOf('.');
       const newlineIdx = remaining.indexOf('\n');
-      if (dotIdx !== -1 && (newlineIdx === -1 || dotIdx < newlineIdx)) {
-        titleSentence = remaining.slice(0, dotIdx + 1).trim();
-      } else if (newlineIdx !== -1) {
-        titleSentence = remaining.slice(0, newlineIdx).trim();
-      } else {
-        titleSentence = remaining.trim();
-      }
+      titleSentence = newlineIdx !== -1 ? remaining.slice(0, newlineIdx).trim() : remaining.trim();
     }
     titleSentence = titleSentence.replace(/^[:\-–\s]+/, '').replace(/\s+/g, ' ').trim();
     if (titleSentence && !/[.!\u0964]$/.test(titleSentence)) {

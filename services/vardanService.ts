@@ -71,11 +71,11 @@ export function extractVardanFromHtml(rawHtml: string): string {
       .replace(/<[^>]*>?/gm, ' ');
 
     // 2. Locate "വരദാനം" strictly when it appears as a section heading (e.g. "വരദാനം :-" or "വരദാനം:").
-    // Must be preceded by non-letter / start-of-line / whitespace,
+    // Must be preceded by start-of-line or newline (\n),
     // and followed strictly by heading punctuation (":-", ": -", "-:", ":", "-", "–").
     // Mid-sentence words in Murli discourse are strictly excluded.
     const headingRegex =
-      /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/iu;
+      /(?:^|\n)\s*വരദാനം(?:\s*\(Blessing\))?\s*(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/i;
 
     let contentToParse = '';
     const match = text.match(headingRegex);
@@ -97,23 +97,22 @@ export function extractVardanFromHtml(rawHtml: string): string {
     // 3. Trim leading hyphens, colons, or whitespace
     let remaining = contentToParse.replace(/^[:\-–\s]+/, '').trim();
 
-    // 4. Extract ONLY the first title sentence immediately following it:
-    // - Check for blessing benediction word ('ഭവിക്കട്ടെ', 'ഭവിക്കുക', 'ആകട്ടെ', 'ഭവിപ്പൂതാക', 'ഭവ:')
-    // - Stop strictly at the first full stop (.) or sentence terminator, or paragraph break
+    // 4. Extract ONLY the main blessing sentence immediately following it:
+    // - Stop strictly at the very first full stop (.), or benediction boundary, or paragraph break
+    // - Ensure it does NOT include explanation paragraphs, slogans, or full murli text
     let titleSentence = '';
-    const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:)[.!\u0964]?)/i);
-    if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
-      titleSentence = benedictionMatch[1].trim();
+    const benMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:)[.!\u0964]?)/i);
+    const dotIdx = remaining.indexOf('.');
+
+    if (dotIdx !== -1 && (!benMatch || dotIdx <= benMatch[1].length)) {
+      titleSentence = remaining.slice(0, dotIdx + 1).trim();
+    } else if (benMatch && benMatch[1].trim().length > 15) {
+      titleSentence = benMatch[1].trim();
+    } else if (dotIdx !== -1) {
+      titleSentence = remaining.slice(0, dotIdx + 1).trim();
     } else {
-      const dotIdx = remaining.indexOf('.');
       const newlineIdx = remaining.indexOf('\n');
-      if (dotIdx !== -1 && (newlineIdx === -1 || dotIdx < newlineIdx)) {
-        titleSentence = remaining.slice(0, dotIdx + 1).trim();
-      } else if (newlineIdx !== -1) {
-        titleSentence = remaining.slice(0, newlineIdx).trim();
-      } else {
-        titleSentence = remaining.trim();
-      }
+      titleSentence = newlineIdx !== -1 ? remaining.slice(0, newlineIdx).trim() : remaining.trim();
     }
 
     // Clean formatting and trim leading punctuation

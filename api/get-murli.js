@@ -49,41 +49,41 @@ function extractVardanText(rawHtml, lang = 'ml') {
     .replace(/<[^>]*>?/gm, ' ');
 
   // 1. Locate heading strictly when it appears as a section heading (e.g. "വരദാനം :-", "വരദാനം:").
-  // Do not match mid-sentence words in discourse.
-  // Note: 'അവ്യക്ത' is intentionally excluded from delimiters because Malayalam blessings frequently use the word 'അവ്യക്ത'.
+  // Must match strictly at start-of-line. Do not match mid-sentence words in discourse.
   const headingRegex =
     lang === 'ml'
-      ? /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/iu
-      : /(?:^|[^\p{L}\p{N}])(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|धारणा|स्पष्टीकरण|$))/iu;
+      ? /(?:^|\n)\s*വരദാനം(?:\s*\(Blessing\))?\s*(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|$))/i
+      : /(?:^|\n)\s*(?:Varadan|Blessing|വരദാനം|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*([\s\S]*?)(?=(?:\n\s*(?:സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|വിശദീകരണം|धारणा|स्पष्टीकरण)|സ്ലോഗൻ|സ്ലോഗന്|സ്ലോഗന്‍|Slogan|മാതേശ്വരി|धारणा|स्पष्टीकरण|$))/i;
 
-  let contentToParse = decoded;
+  let contentToParse = '';
   const match = decoded.match(headingRegex);
   if (match && match[1]) {
     contentToParse = match[1];
-  } else if (/^(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)/i.test(decoded.trim())) {
+  } else if (/^(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])/i.test(decoded.trim())) {
     contentToParse = decoded
       .trim()
       .replace(/^(?:വരദാനം|വരദാൻ|Varadan|Blessing|वरदान)\s*(?:\([^\)]*\)\s*)?(?::\s*[-–]|[-–]\s*:|[:\-–])\s*/iu, '');
   }
 
+  if (!contentToParse) return '';
+
   // 2. Trim leading hyphens, colons, or whitespace
   let remaining = contentToParse.replace(/^[:\-–\s]+/, '').trim();
 
-  // 3. Extract ONLY the first title sentence immediately following it, stopping strictly at the very first full stop (.)
+  // 3. Extract ONLY the main blessing sentence immediately following it, stopping strictly at the very first full stop (.)
   let titleSentence = '';
-  const benedictionMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:|भव)[.!\u0964]?)/i);
-  if (benedictionMatch && benedictionMatch[1] && benedictionMatch[1].trim().length > 15) {
-    titleSentence = benedictionMatch[1].trim();
+  const benMatch = remaining.match(/^([\s\S]*?(?:ഭവിക്കട്ടെ|ഭവിക്കുക|ആകട്ടെ|ഭവിപ്പൂതാക|ഭവ:|भव)[.!\u0964]?)/i);
+  const dotIdx = remaining.indexOf('.');
+
+  if (dotIdx !== -1 && (!benMatch || dotIdx <= benMatch[1].length)) {
+    titleSentence = remaining.slice(0, dotIdx + 1).trim();
+  } else if (benMatch && benMatch[1].trim().length > 15) {
+    titleSentence = benMatch[1].trim();
+  } else if (dotIdx !== -1) {
+    titleSentence = remaining.slice(0, dotIdx + 1).trim();
   } else {
-    const dotIdx = remaining.indexOf('.');
     const newlineIdx = remaining.indexOf('\n');
-    if (dotIdx !== -1 && (newlineIdx === -1 || dotIdx < newlineIdx)) {
-      titleSentence = remaining.slice(0, dotIdx + 1).trim();
-    } else if (newlineIdx !== -1) {
-      titleSentence = remaining.slice(0, newlineIdx).trim();
-    } else {
-      titleSentence = remaining.trim();
-    }
+    titleSentence = newlineIdx !== -1 ? remaining.slice(0, newlineIdx).trim() : remaining.trim();
   }
 
   titleSentence = titleSentence

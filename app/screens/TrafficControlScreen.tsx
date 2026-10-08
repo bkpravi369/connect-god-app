@@ -14,7 +14,10 @@ import {
   playToneAudioPreview,
   stopToneAudioPreview,
   stopCurrentAlarmPlayback,
+  getDeviceBrandInfo,
+  requestOemBackgroundKillerProtection,
 } from '@/services/trafficNativePlugin';
+import { OemBackgroundAlertModal } from '@/components/OemBackgroundAlertModal';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -140,10 +143,19 @@ export default function TrafficControlScreen() {
 
   const [batteryOptimizationIgnored, setBatteryOptimizationIgnored] = useState<boolean | null>(null);
   const [showBatteryPromptModal, setShowBatteryPromptModal] = useState<boolean>(false);
+  const [deviceBrand, setDeviceBrand] = useState<string>('Your Device');
 
   const checkBatteryOptimization = async () => {
     if (!isAndroidTrafficApp()) return;
     try {
+      getDeviceBrandInfo()
+        .then((info) => {
+          if (info.brandName && info.brandName !== 'Your Device') {
+            setDeviceBrand(info.brandName);
+          }
+        })
+        .catch(() => {});
+
       const res = await TrafficControlNative.isIgnoringBatteryOptimizations();
       const isIgnoring = !!res?.isIgnoring;
       setBatteryOptimizationIgnored(isIgnoring);
@@ -163,12 +175,12 @@ export default function TrafficControlScreen() {
     try {
       setItem('has_prompted_battery_opt_v1', 'true');
       setShowBatteryPromptModal(false);
-      await TrafficControlNative.requestIgnoreBatteryOptimizations();
+      await requestOemBackgroundKillerProtection();
       setTimeout(() => {
         checkBatteryOptimization();
       }, 1500);
     } catch (err: any) {
-      toast.show('Failed to open battery settings: ' + (err?.message || err), 'info');
+      toast.show('Failed to open background settings: ' + (err?.message || err), 'info');
     }
   };
 
@@ -538,12 +550,12 @@ export default function TrafficControlScreen() {
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.batteryOptTitle}>
-                    {batteryOptimizationIgnored ? 'Battery Saver: Unrestricted' : 'Battery Saver: Optimization Active'}
+                    {batteryOptimizationIgnored ? `${deviceBrand} Background Shield: Active` : `${deviceBrand} Background Protection`}
                   </Text>
                   <Text style={styles.batteryOptSub}>
                     {batteryOptimizationIgnored
                       ? 'Connect GOD can fire on-time alarms without being killed in background.'
-                      : 'Samsung, Xiaomi, Vivo, Oppo devices may silence alarms in deep sleep unless whitelisted.'}
+                      : `To ensure uninterrupted alarms on ${deviceBrand}, please allow Background Activity & disable Battery Saver.`}
                   </Text>
                 </View>
               </View>
@@ -552,7 +564,7 @@ export default function TrafficControlScreen() {
                   style={({ pressed }) => [styles.batteryOptBtn, pressed && styles.btnPressed]}
                   onPress={handleRequestBatteryExemption}
                 >
-                  <Text style={styles.batteryOptBtnText}>Whitelist</Text>
+                  <Text style={styles.batteryOptBtnText}>Setup Now</Text>
                 </Pressable>
               )}
             </View>
@@ -764,47 +776,20 @@ export default function TrafficControlScreen() {
         />
       )}
 
-      {/* One-Time Battery Optimization Prompt Modal */}
-      <Modal
+      {/* One-Time Battery / OEM Background Protection Modal */}
+      <OemBackgroundAlertModal
         visible={showBatteryPromptModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        brandName={deviceBrand}
+        featureName="Traffic Control"
+        onDismiss={() => {
           setItem('has_prompted_battery_opt_v1', 'true');
           setShowBatteryPromptModal(false);
         }}
-      >
-        <View style={styles.batteryModalOverlay}>
-          <View style={styles.batteryModalContent}>
-            <View style={styles.batteryModalIconWrap}>
-              <ShieldAlert color="#991b1b" size={32} strokeWidth={2.2} />
-            </View>
-            <Text style={styles.batteryModalTitle}>Reliable Background Alarms</Text>
-            <Text style={styles.batteryModalText}>
-              Many Android phones (Samsung, Xiaomi, Vivo, Oppo, OnePlus) aggressively kill background alarms during deep sleep.
-              {"\n\n"}
-              Please whitelist Connect GOD from battery optimization so your scheduled Traffic Control meditation songs play reliably on time.
-            </Text>
-            <View style={styles.batteryModalActions}>
-              <Pressable
-                style={({ pressed }) => [styles.batteryModalSecondaryBtn, pressed && styles.btnPressed]}
-                onPress={() => {
-                  setItem('has_prompted_battery_opt_v1', 'true');
-                  setShowBatteryPromptModal(false);
-                }}
-              >
-                <Text style={styles.batteryModalSecondaryText}>Later</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.batteryModalPrimaryBtn, pressed && styles.btnPressed]}
-                onPress={handleRequestBatteryExemption}
-              >
-                <Text style={styles.batteryModalPrimaryText}>Whitelist Now</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onSetupSuccess={() => {
+          setItem('has_prompted_battery_opt_v1', 'true');
+          checkBatteryOptimization();
+        }}
+      />
     </View>
   );
 }

@@ -1,6 +1,7 @@
 package com.bkkozhikode.connectgod;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -34,6 +35,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Locale;
 
 @CapacitorPlugin(name = "TrafficControlNative")
 public class TrafficControlPlugin extends Plugin {
@@ -220,6 +222,179 @@ public class TrafficControlPlugin extends Plugin {
         } catch (Exception e) {
             Log.e(TAG, "Error requesting battery exemption: " + e.getMessage(), e);
             call.reject("Unable to request battery exemption: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void openOemBackgroundSettings(PluginCall call) {
+        try {
+            boolean success = routeOemBackgroundIntent(getContext());
+            JSObject ret = new JSObject();
+            ret.put("success", success);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Error in openOemBackgroundSettings: " + e.getMessage(), e);
+            call.reject("Failed to open OEM background settings: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getDeviceBrandName(PluginCall call) {
+        String raw = Build.MANUFACTURER != null ? Build.MANUFACTURER.trim() : "";
+        String brandName = "Your Device";
+        if (!raw.isEmpty()) {
+            brandName = Character.toUpperCase(raw.charAt(0)) + (raw.length() > 1 ? raw.substring(1) : "");
+        }
+        JSObject ret = new JSObject();
+        ret.put("manufacturer", raw.toLowerCase(Locale.ROOT));
+        ret.put("brandName", brandName);
+        call.resolve(ret);
+    }
+
+    /**
+     * OEM Background Killer Protection Intent Routing:
+     * Detects Build.MANUFACTURER.toLowerCase():
+     * - Xiaomi: Open Intent("miui.intent.action.OP_AUTO_START") with fallback to App Settings.
+     * - Vivo: Open Intent for "com.iqoo.secure" / autostart manager.
+     * - Oppo/OnePlus: Open Intent for "com.coloros.safecenter".
+     * - Standard: Trigger Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS for package.
+     */
+    public static boolean routeOemBackgroundIntent(Context context) {
+        if (context == null) return false;
+        String manufacturer = Build.MANUFACTURER != null ? Build.MANUFACTURER.toLowerCase(Locale.ROOT) : "";
+        boolean launched = false;
+
+        try {
+            if (manufacturer.contains("xiaomi") || manufacturer.contains("redmi") || manufacturer.contains("poco")) {
+                try {
+                    Intent intent = new Intent("miui.intent.action.OP_AUTO_START");
+                    intent.addCategory(Intent.CATEGORY_DEFAULT);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(intent);
+                    launched = true;
+                    TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_ROUTED", "Launched Xiaomi/MIUI auto-start settings");
+                } catch (Exception e) {
+                    try {
+                        Intent intent = new Intent();
+                        intent.setComponent(new ComponentName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"));
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(intent);
+                        launched = true;
+                        TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_ROUTED", "Launched Xiaomi Security Center autostart");
+                    } catch (Exception e2) {
+                        openAppSettings(context);
+                        launched = true;
+                        TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_FALLBACK", "Fell back to App Settings on Xiaomi: " + e2.getMessage());
+                    }
+                }
+            } else if (manufacturer.contains("vivo") || manufacturer.contains("iqoo")) {
+                try {
+                    Intent intent = new Intent();
+                    intent.setComponent(new ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(intent);
+                    launched = true;
+                    TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_ROUTED", "Launched Vivo iQOO secure whitelist");
+                } catch (Exception e) {
+                    try {
+                        Intent intent = new Intent();
+                        intent.setComponent(new ComponentName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"));
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(intent);
+                        launched = true;
+                        TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_ROUTED", "Launched Vivo BgStartUpManager");
+                    } catch (Exception e2) {
+                        try {
+                            Intent intent = new Intent();
+                            intent.setComponent(new ComponentName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"));
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            context.startActivity(intent);
+                            launched = true;
+                            TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_ROUTED", "Launched Vivo permission manager");
+                        } catch (Exception e3) {
+                            openAppSettings(context);
+                            launched = true;
+                            TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_FALLBACK", "Fell back to App Settings on Vivo: " + e3.getMessage());
+                        }
+                    }
+                }
+            } else if (manufacturer.contains("oppo") || manufacturer.contains("oneplus") || manufacturer.contains("realme")) {
+                try {
+                    Intent intent = new Intent();
+                    intent.setComponent(new ComponentName("com.coloros.safecenter", "com.coloros.safecenter.permission.startup.StartupAppListActivity"));
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    context.startActivity(intent);
+                    launched = true;
+                    TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_ROUTED", "Launched Oppo/OnePlus ColorOS safecenter");
+                } catch (Exception e) {
+                    try {
+                        Intent intent = new Intent();
+                        intent.setComponent(new ComponentName("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity"));
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(intent);
+                        launched = true;
+                        TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_ROUTED", "Launched Oppo/OnePlus StartupAppListActivity");
+                    } catch (Exception e2) {
+                        try {
+                            Intent intent = new Intent();
+                            intent.setComponent(new ComponentName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity"));
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            context.startActivity(intent);
+                            launched = true;
+                            TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_ROUTED", "Launched Oppo safe startup");
+                        } catch (Exception e3) {
+                            openAppSettings(context);
+                            launched = true;
+                            TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "OEM_FALLBACK", "Fell back to App Settings on Oppo/OnePlus: " + e3.getMessage());
+                        }
+                    }
+                }
+            }
+
+            if (!launched) {
+                // Standard: Trigger Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS for package
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                        intent.setData(Uri.parse("package:" + context.getPackageName()));
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(intent);
+                        launched = true;
+                        TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "STANDARD_BATTERY_ROUTED", "Requested standard battery optimization exemption");
+                    } catch (Exception e) {
+                        try {
+                            Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                            context.startActivity(intent);
+                            launched = true;
+                            TrafficControlDiagnostics.recordEvent(context, "SYSTEM", "STANDARD_BATTERY_ROUTED", "Opened battery optimization settings list");
+                        } catch (Exception e2) {
+                            openAppSettings(context);
+                            launched = true;
+                        }
+                    }
+                } else {
+                    openAppSettings(context);
+                    launched = true;
+                }
+            }
+        } catch (Exception ex) {
+            Log.e(TAG, "Error in routeOemBackgroundIntent: " + ex.getMessage(), ex);
+            openAppSettings(context);
+            launched = true;
+        }
+        return launched;
+    }
+
+    private static void openAppSettings(Context context) {
+        if (context == null) return;
+        try {
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + context.getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to open application details settings: " + e.getMessage());
         }
     }
 

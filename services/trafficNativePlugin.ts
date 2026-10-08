@@ -90,6 +90,8 @@ export interface TrafficControlNativePlugin {
   exportDiagnostics(): Promise<{ report: string }>;
   isIgnoringBatteryOptimizations(): Promise<{ isIgnoring: boolean }>;
   requestIgnoreBatteryOptimizations(): Promise<{ requested: boolean }>;
+  openOemBackgroundSettings(): Promise<{ success: boolean }>;
+  getDeviceBrandName(): Promise<{ manufacturer: string; brandName: string }>;
   getSystemRingtones(): Promise<{ ringtones: SystemRingtone[] }>;
   pickCustomAudio(): Promise<ToneSelectionResult>;
   playTonePreview(options: { toneType: string; toneUri?: string; slotKey?: string }): Promise<{ playing: boolean }>;
@@ -99,6 +101,37 @@ export interface TrafficControlNativePlugin {
 
 export const TrafficControlNative = registerPlugin<TrafficControlNativePlugin>('TrafficControlNative');
 export const isAndroidTrafficApp = () => Capacitor.getPlatform() === 'android';
+
+export async function getDeviceBrandInfo(): Promise<{ manufacturer: string; brandName: string }> {
+  if (!isAndroidTrafficApp()) {
+    return { manufacturer: 'web', brandName: 'Your Device' };
+  }
+  try {
+    const res = await TrafficControlNative.getDeviceBrandName();
+    return {
+      manufacturer: res?.manufacturer || '',
+      brandName: res?.brandName || 'Your Device',
+    };
+  } catch {
+    return { manufacturer: 'android', brandName: 'Your Device' };
+  }
+}
+
+export async function requestOemBackgroundKillerProtection(): Promise<boolean> {
+  if (!isAndroidTrafficApp()) return false;
+  try {
+    const res = await TrafficControlNative.openOemBackgroundSettings();
+    return !!res?.success;
+  } catch (err) {
+    console.warn('[TrafficNativePlugin] openOemBackgroundSettings error, falling back to standard:', err);
+    try {
+      await TrafficControlNative.requestIgnoreBatteryOptimizations();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
 
 export interface AlarmStatusResult {
   message: string;

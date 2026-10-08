@@ -23,6 +23,14 @@ import {
   parseVideoTimestamp,
 } from '@/lib/youtube';
 import { fetchPodcastVideos, getCachedPodcastVideos } from '@/services/podcastService';
+import { OemBackgroundAlertModal, OemWarningCard } from '@/components/OemBackgroundAlertModal';
+import {
+  isAndroidTrafficApp,
+  getDeviceBrandInfo,
+  requestOemBackgroundKillerProtection,
+  TrafficControlNative,
+} from '@/services/trafficNativePlugin';
+import { getItem, setItem } from '@/lib/storage';
 
 export type PodcastCardItem = {
   id: string;
@@ -119,6 +127,9 @@ export default function PodcastScreen() {
     DEFAULT_MEDIA_FEEDS.sheeja,
   ]);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showOemModal, setShowOemModal] = useState<boolean>(false);
+  const [deviceBrand, setDeviceBrand] = useState<string>('Your Device');
+  const [isBatteryOptimized, setIsBatteryOptimized] = useState<boolean | null>(null);
 
   const mapYtToCard = (yt: YouTubeVideo | null, fallback: PodcastCardItem): PodcastCardItem => {
     if (!yt || !yt.videoId) return fallback;
@@ -229,6 +240,33 @@ export default function PodcastScreen() {
 
     // 2. Fresh background fetch with cache-busting
     loadYouTubeMediaEngine(true);
+
+    // 3. OEM Background Killer Check for Android devices
+    if (isAndroidTrafficApp()) {
+      getDeviceBrandInfo()
+        .then((info) => {
+          if (info.brandName && info.brandName !== 'Your Device') {
+            setDeviceBrand(info.brandName);
+          }
+        })
+        .catch(() => {});
+
+      TrafficControlNative.isIgnoringBatteryOptimizations()
+        .then((res) => {
+          const isIgnoring = !!res?.isIgnoring;
+          setIsBatteryOptimized(!isIgnoring);
+          const hasPrompted = getItem('has_prompted_podcast_oem_opt_v1');
+          if (!hasPrompted && !isIgnoring) {
+            setShowOemModal(true);
+          }
+        })
+        .catch(() => {
+          const hasPrompted = getItem('has_prompted_podcast_oem_opt_v1');
+          if (!hasPrompted) {
+            setShowOemModal(true);
+          }
+        });
+    }
   }, []);
 
   const handleRefresh = async () => {
@@ -239,6 +277,9 @@ export default function PodcastScreen() {
   };
 
   const handleOpenVideo = async (video: PodcastCardItem | YouTubeVideo) => {
+    if (isAndroidTrafficApp() && !getItem('has_prompted_podcast_oem_opt_v1') && isBatteryOptimized) {
+      setShowOemModal(true);
+    }
     const targetUrl =
       (video as any).link ||
       video.url ||
@@ -336,6 +377,23 @@ export default function PodcastScreen() {
             <RotateCw color="#ffffff" size={16} strokeWidth={2.4} />
           </Pressable>
         </View>
+
+        {/* OEM Background Protection Warning Card */}
+        {isAndroidTrafficApp() && isBatteryOptimized && (
+          <OemWarningCard
+            brandName={deviceBrand}
+            isExempted={false}
+            onSetupNow={async () => {
+              setItem('has_prompted_podcast_oem_opt_v1', 'true');
+              await requestOemBackgroundKillerProtection();
+              TrafficControlNative.isIgnoringBatteryOptimizations()
+                .then((res) => {
+                  setIsBatteryOptimized(!res?.isIgnoring);
+                })
+                .catch(() => {});
+            }}
+          />
+        )}
 
         {/* Filter Chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={styles.filterRow}>
@@ -493,6 +551,23 @@ export default function PodcastScreen() {
 
         <View style={{ height: SPACING['3xl'] }} />
       </ScrollView>
+
+      {/* OEM Background Protection Modal */}
+      <OemBackgroundAlertModal
+        visible={showOemModal}
+        brandName={deviceBrand}
+        featureName="Podcast"
+        onDismiss={() => {
+          setItem('has_prompted_podcast_oem_opt_v1', 'true');
+          setShowOemModal(false);
+        }}
+        onSetupSuccess={async () => {
+          setItem('has_prompted_podcast_oem_opt_v1', 'true');
+          setShowOemModal(false);
+          const res = await TrafficControlNative.isIgnoringBatteryOptimizations().catch(() => ({ isIgnoring: true }));
+          setIsBatteryOptimized(!res?.isIgnoring);
+        }}
+      />
     </View>
   );
 }

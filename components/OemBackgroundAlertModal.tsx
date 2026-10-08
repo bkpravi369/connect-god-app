@@ -7,10 +7,10 @@ import {
   View,
 } from 'react-native';
 import { ShieldAlert, ArrowRight, X } from 'lucide-react-native';
-import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
 import {
   getDeviceBrandInfo,
   requestOemBackgroundKillerProtection,
+  isAndroidTrafficApp,
 } from '@/services/trafficNativePlugin';
 
 export interface OemBackgroundAlertModalProps {
@@ -28,17 +28,44 @@ export function OemBackgroundAlertModal({
   featureName = 'Traffic Control',
   onSetupSuccess,
 }: OemBackgroundAlertModalProps) {
+  // Gracefully return null on Web / PWA where native OEM intents do not exist
+  if (!isAndroidTrafficApp() || !visible) {
+    return null;
+  }
+
+  return (
+    <OemBackgroundAlertModalInner
+      visible={visible}
+      onDismiss={onDismiss}
+      brandName={initialBrand}
+      featureName={featureName}
+      onSetupSuccess={onSetupSuccess}
+    />
+  );
+}
+
+function OemBackgroundAlertModalInner({
+  visible,
+  onDismiss,
+  brandName: initialBrand,
+  featureName = 'Traffic Control',
+  onSetupSuccess,
+}: OemBackgroundAlertModalProps) {
   const [detectedBrand, setDetectedBrand] = useState<string>(initialBrand || 'Your Device');
 
   useEffect(() => {
     let isMounted = true;
-    getDeviceBrandInfo()
-      .then((info) => {
-        if (isMounted && info.brandName && info.brandName !== 'Your Device') {
-          setDetectedBrand(info.brandName);
-        }
-      })
-      .catch(() => {});
+    try {
+      getDeviceBrandInfo()
+        .then((info) => {
+          if (isMounted && info?.brandName && info.brandName !== 'Your Device') {
+            setDetectedBrand(info.brandName);
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // Safe fallback
+    }
     return () => {
       isMounted = false;
     };
@@ -51,64 +78,69 @@ export function OemBackgroundAlertModal({
     } catch (err) {
       console.warn('[OemBackgroundAlertModal] Setup error:', err);
     } finally {
-      onDismiss();
+      if (onDismiss) onDismiss();
     }
   };
 
   const alertMessage = `To ensure uninterrupted alarms on ${detectedBrand}, please allow Background Activity & disable Battery Saver.`;
 
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onDismiss}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalCard}>
-          <Pressable
-            style={({ pressed }) => [styles.closeBtn, pressed && styles.btnPressed]}
-            onPress={onDismiss}
-            hitSlop={8}
-            accessibilityLabel="Close alert"
-          >
-            <X color={COLORS.gray[400]} size={18} strokeWidth={2} />
-          </Pressable>
-
-          <View style={styles.iconWrap}>
-            <ShieldAlert color="#d97706" size={28} strokeWidth={2.2} />
-          </View>
-
-          <Text style={styles.modalTitle}>Background Protection</Text>
-
-          <Text style={styles.modalSubtitle}>
-            {featureName} Optimization for {detectedBrand}
-          </Text>
-
-          <View style={styles.messageBox}>
-            <Text style={styles.modalMessage}>{alertMessage}</Text>
-          </View>
-
-          <View style={styles.buttonRow}>
+  try {
+    return (
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={onDismiss}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
             <Pressable
-              style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
+              style={({ pressed }) => [styles.closeBtn, pressed && styles.btnPressed]}
               onPress={onDismiss}
+              hitSlop={8}
+              accessibilityLabel="Close alert"
             >
-              <Text style={styles.secondaryBtnText}>Later</Text>
+              <X color="#9ca3af" size={18} strokeWidth={2} />
             </Pressable>
 
-            <Pressable
-              style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
-              onPress={handleSetupNow}
-            >
-              <Text style={styles.primaryBtnText}>Setup Now</Text>
-              <ArrowRight color="#ffffff" size={16} strokeWidth={2.4} />
-            </Pressable>
+            <View style={styles.iconWrap}>
+              <ShieldAlert color="#d97706" size={28} strokeWidth={2.2} />
+            </View>
+
+            <Text style={styles.modalTitle}>Background Protection</Text>
+
+            <Text style={styles.modalSubtitle}>
+              {featureName} Optimization for {detectedBrand}
+            </Text>
+
+            <View style={styles.messageBox}>
+              <Text style={styles.modalMessage}>{alertMessage}</Text>
+            </View>
+
+            <View style={styles.buttonRow}>
+              <Pressable
+                style={({ pressed }) => [styles.secondaryBtn, pressed && styles.btnPressed]}
+                onPress={onDismiss}
+              >
+                <Text style={styles.secondaryBtnText}>Later</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [styles.primaryBtn, pressed && styles.btnPressed]}
+                onPress={handleSetupNow}
+              >
+                <Text style={styles.primaryBtnText}>Setup Now</Text>
+                <ArrowRight color="#ffffff" size={16} strokeWidth={2.4} />
+              </Pressable>
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
-  );
+      </Modal>
+    );
+  } catch (renderErr) {
+    console.warn('[OemBackgroundAlertModal] Render error:', renderErr);
+    return null;
+  }
 }
 
 export interface OemWarningCardProps {
@@ -124,57 +156,75 @@ export function OemWarningCard({
   onSetupNow,
   style,
 }: OemWarningCardProps) {
+  // Gracefully return null on Web / PWA where native OEM intents do not exist
+  if (!isAndroidTrafficApp()) {
+    return null;
+  }
+
   const [detectedBrand, setDetectedBrand] = useState<string>(initialBrand || 'Your Device');
 
   useEffect(() => {
     let isMounted = true;
-    getDeviceBrandInfo()
-      .then((info) => {
-        if (isMounted && info.brandName && info.brandName !== 'Your Device') {
-          setDetectedBrand(info.brandName);
-        }
-      })
-      .catch(() => {});
+    try {
+      getDeviceBrandInfo()
+        .then((info) => {
+          if (isMounted && info?.brandName && info.brandName !== 'Your Device') {
+            setDetectedBrand(info.brandName);
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // Safe fallback
+    }
     return () => {
       isMounted = false;
     };
   }, []);
 
   const handlePressSetup = async () => {
-    if (onSetupNow) {
-      onSetupNow();
-    } else {
-      await requestOemBackgroundKillerProtection();
+    try {
+      if (onSetupNow) {
+        onSetupNow();
+      } else {
+        await requestOemBackgroundKillerProtection();
+      }
+    } catch (err) {
+      console.warn('[OemWarningCard] Setup error:', err);
     }
   };
 
   const alertMessage = `To ensure uninterrupted alarms on ${detectedBrand}, please allow Background Activity & disable Battery Saver.`;
 
-  return (
-    <View style={[styles.cardContainer, style]}>
-      <View style={styles.cardHeaderRow}>
-        <View style={styles.cardHeaderLeft}>
-          <ShieldAlert color="#d97706" size={17} strokeWidth={2.2} />
-          <Text style={styles.cardTitle}>{detectedBrand} Background Shield</Text>
+  try {
+    return (
+      <View style={[styles.cardContainer, style]}>
+        <View style={styles.cardHeaderRow}>
+          <View style={styles.cardHeaderLeft}>
+            <ShieldAlert color="#d97706" size={17} strokeWidth={2.2} />
+            <Text style={styles.cardTitle}>{detectedBrand} Background Shield</Text>
+          </View>
+          <View style={styles.statusPill}>
+            <Text style={styles.statusPillText}>{isExempted ? 'Active' : 'Setup Required'}</Text>
+          </View>
         </View>
-        <View style={styles.statusPill}>
-          <Text style={styles.statusPillText}>{isExempted ? 'Active' : 'Setup Required'}</Text>
-        </View>
+
+        <Text style={styles.cardMessage}>{alertMessage}</Text>
+
+        {!isExempted && (
+          <Pressable
+            style={({ pressed }) => [styles.cardActionBtn, pressed && styles.btnPressed]}
+            onPress={handlePressSetup}
+          >
+            <Text style={styles.cardActionBtnText}>Setup Now</Text>
+            <ArrowRight color="#78350f" size={14} strokeWidth={2.4} />
+          </Pressable>
+        )}
       </View>
-
-      <Text style={styles.cardMessage}>{alertMessage}</Text>
-
-      {!isExempted && (
-        <Pressable
-          style={({ pressed }) => [styles.cardActionBtn, pressed && styles.btnPressed]}
-          onPress={handlePressSetup}
-        >
-          <Text style={styles.cardActionBtnText}>Setup Now</Text>
-          <ArrowRight color="#78350f" size={14} strokeWidth={2.4} />
-        </Pressable>
-      )}
-    </View>
-  );
+    );
+  } catch (renderErr) {
+    console.warn('[OemWarningCard] Render error:', renderErr);
+    return null;
+  }
 }
 
 const styles = StyleSheet.create({
@@ -183,27 +233,31 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: SPACING.lg,
+    padding: 16,
   },
   modalCard: {
     width: '100%',
     maxWidth: 380,
     backgroundColor: '#ffffff',
-    borderRadius: RADIUS.xl,
+    borderRadius: 20,
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 20,
     alignItems: 'center',
     borderWidth: 1.5,
     borderColor: '#fde68a',
-    ...SHADOWS.lg,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 8,
   },
   closeBtn: {
     position: 'absolute',
     top: 14,
     right: 14,
     padding: 6,
-    borderRadius: RADIUS.full,
+    borderRadius: 9999,
   },
   iconWrap: {
     width: 54,
@@ -215,22 +269,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   modalTitle: {
-    fontFamily: FONTS.semiBold,
     fontSize: 18,
+    fontWeight: '600',
     color: '#1f2937',
     textAlign: 'center',
     marginBottom: 4,
   },
   modalSubtitle: {
-    fontFamily: FONTS.medium,
     fontSize: 13,
+    fontWeight: '500',
     color: '#d97706',
     textAlign: 'center',
     marginBottom: 12,
   },
   messageBox: {
     backgroundColor: '#fffbeb',
-    borderRadius: RADIUS.md,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#fef08a',
     padding: 14,
@@ -238,7 +292,6 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   modalMessage: {
-    fontFamily: FONTS.regular,
     fontSize: 14,
     lineHeight: 21,
     color: '#78350f',
@@ -253,14 +306,14 @@ const styles = StyleSheet.create({
   secondaryBtn: {
     flex: 1,
     paddingVertical: 12,
-    borderRadius: RADIUS.lg,
+    borderRadius: 16,
     backgroundColor: '#f3f4f6',
     alignItems: 'center',
     justifyContent: 'center',
   },
   secondaryBtnText: {
-    fontFamily: FONTS.semiBold,
     fontSize: 14,
+    fontWeight: '600',
     color: '#4b5563',
   },
   primaryBtn: {
@@ -268,15 +321,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 6,
     paddingVertical: 12,
-    borderRadius: RADIUS.lg,
+    borderRadius: 16,
     backgroundColor: '#d97706',
     alignItems: 'center',
     justifyContent: 'center',
-    ...SHADOWS.sm,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   primaryBtnText: {
-    fontFamily: FONTS.bold,
     fontSize: 14,
+    fontWeight: '700',
     color: '#ffffff',
   },
   btnPressed: {
@@ -285,12 +342,16 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     backgroundColor: '#fffbeb',
-    borderRadius: RADIUS.lg,
+    borderRadius: 16,
     borderWidth: 1.2,
     borderColor: '#fde68a',
     padding: 14,
-    marginBottom: SPACING.md,
-    ...SHADOWS.xs,
+    marginBottom: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -304,25 +365,24 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   cardTitle: {
-    fontFamily: FONTS.semiBold,
     fontSize: 13.5,
+    fontWeight: '600',
     color: '#92400e',
   },
   statusPill: {
     backgroundColor: '#fef3c7',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: RADIUS.full,
+    borderRadius: 9999,
     borderWidth: 0.8,
     borderColor: '#fcd34d',
   },
   statusPillText: {
-    fontFamily: FONTS.bold,
     fontSize: 10.5,
+    fontWeight: '700',
     color: '#b45309',
   },
   cardMessage: {
-    fontFamily: FONTS.regular,
     fontSize: 13,
     lineHeight: 19,
     color: '#78350f',
@@ -336,14 +396,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#fef3c7',
     borderWidth: 1,
     borderColor: '#fcd34d',
-    borderRadius: RADIUS.md,
+    borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 12,
     alignSelf: 'flex-start',
   },
   cardActionBtnText: {
-    fontFamily: FONTS.bold,
     fontSize: 12.5,
+    fontWeight: '700',
     color: '#78350f',
   },
 });
+

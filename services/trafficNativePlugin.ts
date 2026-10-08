@@ -100,7 +100,13 @@ export interface TrafficControlNativePlugin {
 }
 
 export const TrafficControlNative = registerPlugin<TrafficControlNativePlugin>('TrafficControlNative');
-export const isAndroidTrafficApp = () => Capacitor.getPlatform() === 'android';
+export const isAndroidTrafficApp = (): boolean => {
+  try {
+    return typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
+  } catch {
+    return false;
+  }
+};
 
 export async function getDeviceBrandInfo(): Promise<{ manufacturer: string; brandName: string }> {
   if (!isAndroidTrafficApp()) {

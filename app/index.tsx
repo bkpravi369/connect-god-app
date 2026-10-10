@@ -4,6 +4,7 @@ import { Header } from '@/components/Header';
 import { SideDrawer } from '@/components/SideDrawer';
 import { TabBar, TabKey } from '@/components/TabBar';
 import { ChannelSubPageModal } from '@/components/ChannelSubPageModal';
+import { QuickLinksAudioModal, QuickMediaGroup } from '@/components/QuickLinksAudioModal';
 import { HomeScreen } from './screens/HomeScreen';
 import { MurliScreen } from './screens/MurliScreen';
 import { DailyChartScreen } from './screens/DailyChartScreen';
@@ -48,6 +49,10 @@ export default function App() {
   const [tab, setTab] = useState<TabKey>('home');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
+  const [quickMediaConfig, setQuickMediaConfig] = useState<{
+    group: QuickMediaGroup;
+    initialSubTab?: string;
+  } | null>(null);
 
   const initialMurli = getInitialDailyMurli();
   const initialSwaman = getSwamanByDate();
@@ -334,6 +339,9 @@ export default function App() {
         onMurliPress={() => handleTabChange('murli')}
         onMeditationPress={() => handleTabChange('media')}
         onSelectChannel={handleSelectChannelById}
+        onSelectQuickMedia={(group, subTabId) => {
+          setQuickMediaConfig({ group, initialSubTab: subTabId });
+        }}
         socialLinks={socialLinks}
       />
 
@@ -342,6 +350,14 @@ export default function App() {
         visible={!!selectedChannel}
         channel={selectedChannel}
         onClose={() => setSelectedChannel(null)}
+      />
+
+      {/* Quick Links Audio Hub Modal (Karaoke & Occasion Songs) */}
+      <QuickLinksAudioModal
+        visible={!!quickMediaConfig}
+        group={quickMediaConfig?.group || 'karaoke'}
+        initialSubTab={quickMediaConfig?.initialSubTab}
+        onClose={() => setQuickMediaConfig(null)}
       />
     </View>
   );

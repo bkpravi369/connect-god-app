@@ -27,7 +27,20 @@ export type SubTabKey =
   // [RINGTONES]
   | 'ringtones'
   | 'ringtone_hindi'
-  | 'ringtone_malayalam';
+  | 'ringtone_malayalam'
+  // [KARAOKE SONGS]
+  | 'karaoke_malayalam'
+  | 'karaoke_hindi'
+  // [OCCASION SONGS]
+  | 'other_function_music'
+  | 'other_birthday_songs'
+  | 'other_newyear_songs'
+  | 'other_rakhi_songs'
+  | 'other_shivjayanti_songs'
+  | 'other_flaghoisting_songs'
+  | 'other_trafficcontrol_songs'
+  | 'other_murli_songs'
+  | 'other_panchaswaroopam';
 
 // Backward compatibility type
 export type AudioCategoryTab = 'malayalam' | 'hindi' | 'music' | 'commentary';
@@ -45,23 +58,51 @@ export interface StrictSubTabConfig {
   speaker?: string;
 }
 
+export interface QuickMediaCategoryConfig {
+  id: 'karaoke' | 'occasions';
+  title: string;
+  subtitle: string;
+  iconName: 'mic' | 'sparkles';
+  subTabs: {
+    id: SubTabKey;
+    label: string;
+    folder: string;
+    tag: string;
+  }[];
+}
+
+export const KARAOKE_CONFIG: QuickMediaCategoryConfig = {
+  id: 'karaoke',
+  title: 'Karaoke Songs',
+  subtitle: 'Sing-along spiritual instrumental & vocal tracks',
+  iconName: 'mic',
+  subTabs: [
+    { id: 'karaoke_malayalam', label: 'Malayalam', folder: 'karaoke_malayalam', tag: 'karaoke_malayalam' },
+    { id: 'karaoke_hindi', label: 'Hindi', folder: 'karaoke_hindi', tag: 'karaoke_hindi' },
+  ],
+};
+
+export const OCCASIONS_CONFIG: QuickMediaCategoryConfig = {
+  id: 'occasions',
+  title: 'Occasion Songs',
+  subtitle: 'Festival & special event spiritual melodies',
+  iconName: 'sparkles',
+  subTabs: [
+    { id: 'other_function_music', label: 'Function Music', folder: 'other_function_music', tag: 'other_function_music' },
+    { id: 'other_birthday_songs', label: 'Birthday Songs', folder: 'other_birthday_songs', tag: 'other_birthday_songs' },
+    { id: 'other_newyear_songs', label: 'New Year Songs', folder: 'other_newyear_songs', tag: 'other_newyear_songs' },
+    { id: 'other_rakhi_songs', label: 'Rakhi Songs', folder: 'other_rakhi_songs', tag: 'other_rakhi_songs' },
+    { id: 'other_shivjayanti_songs', label: 'Shiv Jayanti Songs', folder: 'other_shivjayanti_songs', tag: 'other_shivjayanti_songs' },
+    { id: 'other_flaghoisting_songs', label: 'Flag Hoisting Songs', folder: 'other_flaghoisting_songs', tag: 'other_flaghoisting_songs' },
+    { id: 'other_trafficcontrol_songs', label: 'Traffic Control Songs', folder: 'other_trafficcontrol_songs', tag: 'other_trafficcontrol_songs' },
+    { id: 'other_murli_songs', label: 'Murli Songs', folder: 'other_murli_songs', tag: 'other_murli_songs' },
+    { id: 'other_panchaswaroopam', label: 'Panchaswaroopam', folder: 'other_panchaswaroopam', tag: 'other_panchaswaroopam' },
+  ],
+};
+
 /**
  * EXACT CLOUDFLARE R2 BUCKET FOLDER MAPPING
  * Map each tab to its exact R2 folder path:
- * [Commentary]
- * - Sheeba Sister -> "commentary-sheeba sister"
- * - Sheeja Sister -> "commentary-sheeja sister"
- * - Others -> "commentary-others"
- * [Songs]
- * - Panch Swarup -> "panch-Swarup"
- * - Hindi -> "song-hindi"
- * - Malayalam -> "song-malayalam"
- * - Om & Bhog -> "om-bhorg"
- * [Music]
- * - Function Music -> "function-music"
- * - Own Music -> "own-music "
- * [Ringtone]
- * - Ringtones -> "ringtones"
  */
 export const R2_FOLDER_MAPPING: Record<SubTabKey, string> = {
   // [Commentary]
@@ -86,6 +127,21 @@ export const R2_FOLDER_MAPPING: Record<SubTabKey, string> = {
   ringtones: 'ringtoned-hindi',
   ringtone_hindi: 'ringtoned-hindi',
   ringtone_malayalam: 'ringtones-malayalam',
+
+  // [Karaoke Songs]
+  karaoke_malayalam: 'karaoke_malayalam',
+  karaoke_hindi: 'karaoke_hindi',
+
+  // [Occasion Songs]
+  other_function_music: 'other_function_music',
+  other_birthday_songs: 'other_birthday_songs',
+  other_newyear_songs: 'other_newyear_songs',
+  other_rakhi_songs: 'other_rakhi_songs',
+  other_shivjayanti_songs: 'other_shivjayanti_songs',
+  other_flaghoisting_songs: 'other_flaghoisting_songs',
+  other_trafficcontrol_songs: 'other_trafficcontrol_songs',
+  other_murli_songs: 'other_murli_songs',
+  other_panchaswaroopam: 'other_panchaswaroopam',
 };
 
 export const R2_SUBTAB_CONFIG: Record<SubTabKey, StrictSubTabConfig> = {
@@ -158,6 +214,54 @@ export const R2_SUBTAB_CONFIG: Record<SubTabKey, StrictSubTabConfig> = {
   ringtone_malayalam: {
     folder: 'ringtones-malayalam',
     category: 'ringtone',
+  },
+
+  // [Karaoke Songs]
+  karaoke_malayalam: {
+    folder: 'karaoke_malayalam',
+    category: 'song',
+  },
+  karaoke_hindi: {
+    folder: 'karaoke_hindi',
+    category: 'song',
+  },
+
+  // [Occasion Songs]
+  other_function_music: {
+    folder: 'other_function_music',
+    category: 'music',
+  },
+  other_birthday_songs: {
+    folder: 'other_birthday_songs',
+    category: 'song',
+  },
+  other_newyear_songs: {
+    folder: 'other_newyear_songs',
+    category: 'song',
+  },
+  other_rakhi_songs: {
+    folder: 'other_rakhi_songs',
+    category: 'song',
+  },
+  other_shivjayanti_songs: {
+    folder: 'other_shivjayanti_songs',
+    category: 'song',
+  },
+  other_flaghoisting_songs: {
+    folder: 'other_flaghoisting_songs',
+    category: 'song',
+  },
+  other_trafficcontrol_songs: {
+    folder: 'other_trafficcontrol_songs',
+    category: 'song',
+  },
+  other_murli_songs: {
+    folder: 'other_murli_songs',
+    category: 'song',
+  },
+  other_panchaswaroopam: {
+    folder: 'other_panchaswaroopam',
+    category: 'song',
   },
 };
 

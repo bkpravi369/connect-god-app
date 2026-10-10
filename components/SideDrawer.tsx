@@ -33,6 +33,7 @@ import {
   Download,
   Sparkles,
   FileText,
+  Mic,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING } from '@/lib/theme';
@@ -124,6 +125,7 @@ type Props = {
   onWallpapersPress?: () => void;
   onAboutPress?: () => void;
   onSelectChannel?: (channelId: string) => void;
+  onSelectQuickMedia?: (group: 'karaoke' | 'occasions', subTabId: string) => void;
   socialLinks?: SocialLinks;
 };
 
@@ -157,12 +159,13 @@ function DrawerLogo() {
   return <BKSunEmblem size={44} />;
 }
 
-export function SideDrawer({ visible, onClose, onMurliPress, onMeditationPress, onWallpapersPress, onAboutPress, onSelectChannel, socialLinks }: Props) {
+export function SideDrawer({ visible, onClose, onMurliPress, onMeditationPress, onWallpapersPress, onAboutPress, onSelectChannel, onSelectQuickMedia, socialLinks }: Props) {
   const router = useRouter();
   const offscreen = -(DRAWER_W + 60);
   const translateX = React.useRef(new Animated.Value(offscreen)).current;
   const overlayOpacity = React.useRef(new Animated.Value(0)).current;
   const [expandedChannel, setExpandedChannel] = useState<string | null>(null);
+  const [expandedQuickLink, setExpandedQuickLink] = useState<'karaoke' | 'occasions' | null>(null);
   const [links, setLinks] = useState<SocialLinks>(DEFAULT_SOCIAL_LINKS);
   const [selectedProfile, setSelectedProfile] = useState<ProfileData | null>(null);
 
@@ -196,6 +199,7 @@ export function SideDrawer({ visible, onClose, onMurliPress, onMeditationPress, 
         Animated.timing(overlayOpacity, { toValue: 0, duration: 240, useNativeDriver: true }),
       ]).start();
       setExpandedChannel(null);
+      setExpandedQuickLink(null);
     }
   }, [visible, translateX, overlayOpacity, offscreen]);
 
@@ -217,6 +221,9 @@ export function SideDrawer({ visible, onClose, onMurliPress, onMeditationPress, 
 
   const toggleChannel = (id: string) =>
     setExpandedChannel((prev) => (prev === id ? null : id));
+
+  const toggleQuickLink = (key: 'karaoke' | 'occasions') =>
+    setExpandedQuickLink((prev) => (prev === key ? null : key));
 
   const openLink = async (url: string) => {
     onClose();
@@ -324,6 +331,153 @@ export function SideDrawer({ visible, onClose, onMurliPress, onMeditationPress, 
 
           {/* ── Quick Links ──────────────────────────────────────────── */}
           <Text style={[styles.sectionLabel, { marginTop: SPACING.xl }]}>QUICK LINKS</Text>
+
+          {/* 1. Karaoke Songs Expandable Menu */}
+          <View style={styles.channelGroup}>
+            <Pressable
+              style={({ pressed }) => [styles.channelRow, pressed && styles.rowPressed]}
+              onPress={() => toggleQuickLink('karaoke')}
+            >
+              <View style={[styles.linkIconWrap, { backgroundColor: '#fdf2f8' }]}>
+                <Mic color="#db2777" size={20} strokeWidth={2.2} />
+              </View>
+              <Text style={styles.channelName}>Karaoke Songs</Text>
+              <ChevronDown
+                color={COLORS.neutral[400]}
+                size={18}
+                strokeWidth={2.2}
+                style={{ transform: [{ rotate: expandedQuickLink === 'karaoke' ? '180deg' : '0deg' }] }}
+              />
+            </Pressable>
+
+            {expandedQuickLink === 'karaoke' && (
+              <View style={styles.subMenu}>
+                <SubLink
+                  label="Malayalam"
+                  icon={<Music color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('karaoke', 'karaoke_malayalam');
+                  }}
+                />
+                <SubLink
+                  label="Hindi"
+                  icon={<Music color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('karaoke', 'karaoke_hindi');
+                  }}
+                />
+              </View>
+            )}
+          </View>
+
+          {/* 2. Occasion Songs Expandable Menu */}
+          <View style={styles.channelGroup}>
+            <Pressable
+              style={({ pressed }) => [styles.channelRow, pressed && styles.rowPressed]}
+              onPress={() => toggleQuickLink('occasions')}
+            >
+              <View style={[styles.linkIconWrap, { backgroundColor: '#fff7ed' }]}>
+                <Sparkles color={COLORS.saffron[600]} size={20} strokeWidth={2.2} />
+              </View>
+              <Text style={styles.channelName}>Occasion Songs</Text>
+              <ChevronDown
+                color={COLORS.neutral[400]}
+                size={18}
+                strokeWidth={2.2}
+                style={{ transform: [{ rotate: expandedQuickLink === 'occasions' ? '180deg' : '0deg' }] }}
+              />
+            </Pressable>
+
+            {expandedQuickLink === 'occasions' && (
+              <View style={styles.subMenu}>
+                <SubLink
+                  label="Function Music"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_function_music');
+                  }}
+                />
+                <SubLink
+                  label="Birthday Songs"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_birthday_songs');
+                  }}
+                />
+                <SubLink
+                  label="New Year Songs"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_newyear_songs');
+                  }}
+                />
+                <SubLink
+                  label="Rakhi Songs"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_rakhi_songs');
+                  }}
+                />
+                <SubLink
+                  label="Shiv Jayanti Songs"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_shivjayanti_songs');
+                  }}
+                />
+                <SubLink
+                  label="Flag Hoisting Songs"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_flaghoisting_songs');
+                  }}
+                />
+                <SubLink
+                  label="Traffic Control Songs"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_trafficcontrol_songs');
+                  }}
+                />
+                <SubLink
+                  label="Murli Songs"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_murli_songs');
+                  }}
+                />
+                <SubLink
+                  label="Panchaswaroopam"
+                  icon={<Sparkles color={COLORS.primary[700]} size={16} strokeWidth={2} />}
+                  color={COLORS.primary[700]}
+                  onPress={() => {
+                    onClose();
+                    onSelectQuickMedia?.('occasions', 'other_panchaswaroopam');
+                  }}
+                />
+              </View>
+            )}
+          </View>
 
           <Pressable
             style={({ pressed }) => [styles.linkRow, pressed && styles.rowPressed]}

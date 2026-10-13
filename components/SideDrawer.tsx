@@ -735,6 +735,7 @@ const styles = StyleSheet.create({
   appLogo: {
     width: 50,
     height: 50,
+    borderRadius: 25,
   },
   appName: {
     fontFamily: FONTS.sansBold,

@@ -60,14 +60,14 @@ async function generateIcons() {
       .toFile(icFgPath);
     console.log(`Generated ${cfg.dir}/ic_launcher_foreground.png (${cfg.fgSize}x${cfg.fgSize})`);
 
-    // 4. Adaptive Icon Background ic_launcher_background.png (108dp solid white)
+    // 4. Adaptive Icon Background ic_launcher_background.png (108dp solid black)
     const icBgPath = path.join(targetDir, 'ic_launcher_background.png');
     await sharp({
       create: {
         width: cfg.fgSize,
         height: cfg.fgSize,
         channels: 4,
-        background: { r: 255, g: 255, b: 255, alpha: 1 }
+        background: { r: 0, g: 0, b: 0, alpha: 1 }
       }
     })
       .png({ quality: 100, compressionLevel: 9 })

@@ -674,7 +674,23 @@ public final class TrafficControlScheduler {
         Intent intent = alarmIntent(context, id).putExtra("id", id).putExtra("trigger", trigger);
         PendingIntent operation = PendingIntent.getBroadcast(context, 0, intent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        alarmSetExactAndAllowWhileIdle(context, trigger, operation);
+
+        // Build showIntent for AlarmClockInfo: tapping alarm notification or status icon opens MainActivity
+        Intent showIntent = new Intent(context, MainActivity.class);
+        showIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent showPendingIntent = PendingIntent.getActivity(
+            context,
+            id.hashCode(),
+            showIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        try {
+            alarmSetAlarmClock(context, trigger, showPendingIntent, operation);
+        } catch (Exception ex) {
+            Log.w(TAG, "setAlarmClock failed, falling back to setExactAndAllowWhileIdle: " + ex.getMessage());
+            alarmSetExactAndAllowWhileIdle(context, trigger, operation);
+        }
     }
 
     public static String dayKey(long millis) {

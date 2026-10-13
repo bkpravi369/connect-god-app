@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Sparkles, Youtube, ArrowRight } from 'lucide-react-native';
+import { Sparkles, Youtube, ArrowRight, Globe, ExternalLink } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import {
@@ -20,7 +20,11 @@ import {
   Varadan,
   Announcement,
   Channel,
+  STORAGE_KEYS,
+  DEFAULT_WEBSITE_URL,
 } from '@/lib/constants';
+import { getJSON, getDateStampedJSON } from '@/lib/storage';
+import { getTodayISTDateString } from '@/services/murliService';
 import { AlertBanner } from '@/components/AlertBanner';
 import { VaradanCard } from '@/components/VaradanCard';
 import { LiveZoomBanner } from '@/components/LiveZoomBanner';
@@ -72,28 +76,53 @@ export default function HomeScreen({
       router.push('/about' as any);
     }
   };
+
+  const handleWebsitePress = () => {
+    const targetUrl = getJSON<string>(STORAGE_KEYS.websiteUrl, DEFAULT_WEBSITE_URL) || DEFAULT_WEBSITE_URL;
+    Linking.openURL(targetUrl).catch((err) => {
+      console.warn('[HomeScreen] Could not open website:', err);
+      toast.show('Unable to open website link', 'error');
+    });
+  };
   
   // Live Vardan extraction state (Zero manual JSON dependency)
   const [extractedVardan, setExtractedVardan] = useState<string>('');
+  const [overrideVardan, setOverrideVardan] = useState<string>('');
   const [isVardanLoading, setIsVardanLoading] = useState<boolean>(true);
 
-  // Fetch today's live Vardan directly from Murli HTML on mount (Strictly Malayalam, Force Fresh Daily Fetch)
+  // Fetch today's live Vardan (Checks manual override first, falls back to automated Murli regex)
   useEffect(() => {
     let isMounted = true;
-    setIsVardanLoading(true);
+    const today = getTodayISTDateString();
+    const manualOverride = getDateStampedJSON<{ textMl: string; enabled: boolean } | null>(
+      STORAGE_KEYS.varadanOverride,
+      today,
+      null
+    );
 
-    fetchDailyVardanFromMurli(true)
-      .then((vardanText) => {
-        if (isMounted && vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText) && !isGenericVaradan(vardanText)) {
-          setExtractedVardan(vardanText.trim());
-        }
-      })
-      .catch((err) => {
-        console.warn('[HomeScreen] Vardan extraction warning:', err);
-      })
-      .finally(() => {
-        if (isMounted) setIsVardanLoading(false);
-      });
+    if (manualOverride && manualOverride.enabled && manualOverride.textMl && manualOverride.textMl.trim().length > 0) {
+      if (isMounted) {
+        setOverrideVardan(manualOverride.textMl.trim());
+        setIsVardanLoading(false);
+      }
+    } else {
+      if (isMounted) {
+        setOverrideVardan('');
+        setIsVardanLoading(true);
+      }
+      fetchDailyVardanFromMurli(true)
+        .then((vardanText) => {
+          if (isMounted && vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText) && !isGenericVaradan(vardanText)) {
+            setExtractedVardan(vardanText.trim());
+          }
+        })
+        .catch((err) => {
+          console.warn('[HomeScreen] Vardan extraction warning:', err);
+        })
+        .finally(() => {
+          if (isMounted) setIsVardanLoading(false);
+        });
+    }
 
     return () => {
       isMounted = false;
@@ -101,19 +130,32 @@ export default function HomeScreen({
   }, []);
 
   const handleRefresh = () => {
-    setIsVardanLoading(true);
-    fetchDailyVardanFromMurli(true)
-      .then((vardanText) => {
-        if (vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText) && !isGenericVaradan(vardanText)) {
-          setExtractedVardan(vardanText.trim());
-        }
-      })
-      .catch((err) => {
-        console.warn('[HomeScreen] Vardan refresh warning:', err);
-      })
-      .finally(() => {
-        setIsVardanLoading(false);
-      });
+    const today = getTodayISTDateString();
+    const manualOverride = getDateStampedJSON<{ textMl: string; enabled: boolean } | null>(
+      STORAGE_KEYS.varadanOverride,
+      today,
+      null
+    );
+
+    if (manualOverride && manualOverride.enabled && manualOverride.textMl && manualOverride.textMl.trim().length > 0) {
+      setOverrideVardan(manualOverride.textMl.trim());
+      setIsVardanLoading(false);
+    } else {
+      setOverrideVardan('');
+      setIsVardanLoading(true);
+      fetchDailyVardanFromMurli(true)
+        .then((vardanText) => {
+          if (vardanText && typeof vardanText === 'string' && isMalayalamText(vardanText) && !isGenericVaradan(vardanText)) {
+            setExtractedVardan(vardanText.trim());
+          }
+        })
+        .catch((err) => {
+          console.warn('[HomeScreen] Vardan refresh warning:', err);
+        })
+        .finally(() => {
+          setIsVardanLoading(false);
+        });
+    }
 
     if (onRefresh) onRefresh();
   };
@@ -190,6 +232,16 @@ export default function HomeScreen({
   const featuredList = useMemo(() => build2x2Videos(autoContent), [autoContent]);
 
   const effectiveVaradan: Varadan = useMemo(() => {
+    // 1. Manual override takes precedence when set
+    if (overrideVardan && overrideVardan.trim().length > 0) {
+      return {
+        textMl: overrideVardan.trim(),
+        text: overrideVardan.trim(),
+        audioUrl: (typeof varadan === 'object' && varadan?.audioUrl) || '',
+      };
+    }
+
+    // 2. Automated Murli Regex extraction fallback
     const rawText =
       (extractedVardan && isMalayalamText(extractedVardan) && !isGenericVaradan(extractedVardan) ? extractedVardan : '') ||
       (typeof varadan === 'string'
@@ -203,7 +255,7 @@ export default function HomeScreen({
       text: resolvedText,
       audioUrl: (typeof varadan === 'object' && varadan?.audioUrl) || '',
     };
-  }, [extractedVardan, varadan]);
+  }, [overrideVardan, extractedVardan, varadan]);
 
   return (
     <ScrollView
@@ -229,7 +281,7 @@ export default function HomeScreen({
           onReadFull={onMurliPress}
           onRefresh={handleRefresh}
           isRefreshing={isRefreshing}
-          isLoading={isVardanLoading || !effectiveVaradan.textMl || isGenericVaradan(effectiveVaradan.textMl)}
+          isLoading={!overrideVardan && (isVardanLoading || !effectiveVaradan.textMl || isGenericVaradan(effectiveVaradan.textMl))}
         />
       </Animated.View>
 
@@ -283,6 +335,22 @@ export default function HomeScreen({
           ))}
         </View>
       </Animated.View>
+
+      {/* ── [Button] Our Official Website Pill Button ── */}
+      <View style={styles.websiteBtnWrap}>
+        <Pressable
+          style={({ pressed }) => [styles.websiteBtn, pressed && styles.websiteBtnPressed]}
+          onPress={handleWebsitePress}
+          accessibilityRole="button"
+          accessibilityLabel="Our Official Website"
+        >
+          <View style={styles.websiteBtnInner}>
+            <Globe color="#D4AF37" size={18} strokeWidth={2.2} />
+            <Text style={styles.websiteBtnText}>Our Official Website</Text>
+            <ExternalLink color="#FDE047" size={15} strokeWidth={2.4} />
+          </View>
+        </Pressable>
+      </View>
 
       {/* ── [Card 3] About Brahma Kumaris Feature Card ── */}
       <Animated.View style={[styles.aboutSection, makeAnimStyle(animAbout)]}>
@@ -595,6 +663,34 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.inter,
     fontSize: 11,
     color: '#9CA3AF',
+  },
+  websiteBtnWrap: {
+    marginVertical: 4,
+  },
+  websiteBtn: {
+    backgroundColor: '#8B0000',
+    borderRadius: RADIUS.full,
+    borderWidth: 1.2,
+    borderColor: '#D4AF37',
+    paddingVertical: 12,
+    paddingHorizontal: SPACING.lg,
+    ...SHADOWS.sm,
+  },
+  websiteBtnPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.985 }],
+  },
+  websiteBtnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  websiteBtnText: {
+    fontFamily: FONTS.interSemiBold,
+    fontSize: 14,
+    color: '#ffffff',
+    letterSpacing: 0.3,
   },
 });
 

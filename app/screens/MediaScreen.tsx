@@ -56,17 +56,6 @@ export const MEDIA_TABS_CONFIG: Record<
     subTabs: SubTabItem[];
   }
 > = {
-  songs: {
-    label: "Songs",
-    icon: Music,
-    subTabs: [
-      { id: "panch_swarup", label: "Panch Swarup" },
-      { id: "hindi", label: "Hindi" },
-      { id: "malayalam", label: "Malayalam" },
-      { id: "om_and_bhog", label: "Om & Bhog" },
-      { id: "own_tunes", label: "Own Tune" },
-    ],
-  },
   commentary: {
     label: "Commentary",
     icon: Radio,
@@ -76,11 +65,20 @@ export const MEDIA_TABS_CONFIG: Record<
       { id: "others", label: "Others" },
     ],
   },
+  songs: {
+    label: "Songs",
+    icon: Music,
+    subTabs: [
+      { id: "hindi", label: "Hindi" },
+      { id: "malayalam", label: "Malayalam" },
+      { id: "om_and_bhog", label: "Om & Bhog" },
+      { id: "own_tunes", label: "Own Tune" },
+    ],
+  },
   music: {
     label: "Music",
     icon: Sparkles,
     subTabs: [
-      { id: "function_music", label: "Function Music" },
       { id: "own_music", label: "Own Music" },
       { id: "meditation_music", label: "Meditation Music" },
     ],
@@ -96,15 +94,13 @@ export const MEDIA_TABS_CONFIG: Record<
 };
 
 const ALL_SUBTAB_KEYS: SubTabKey[] = [
-  "panch_swarup",
+  "sheeba_sister",
+  "sheeja_sister",
+  "others",
   "hindi",
   "malayalam",
   "om_and_bhog",
   "own_tunes",
-  "sheeba_sister",
-  "sheeja_sister",
-  "others",
-  "function_music",
   "own_music",
   "meditation_music",
   "ringtone_hindi",
@@ -114,9 +110,9 @@ const ALL_SUBTAB_KEYS: SubTabKey[] = [
 export default function MediaScreen() {
   const toast = useToast();
 
-  // Active Tab State
-  const [mainTab, setMainTab] = useState<MainMediaTab>("songs");
-  const [subTab, setSubTab] = useState<SubTabKey>("panch_swarup");
+  // Active Tab State: Defaults to Commentary -> Sheeba Sister
+  const [mainTab, setMainTab] = useState<MainMediaTab>("commentary");
+  const [subTab, setSubTab] = useState<SubTabKey>("sheeba_sister");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Cloudflare R2 Direct Tracks & Loading State
@@ -404,7 +400,7 @@ export default function MediaScreen() {
   const handleMainTabSelect = (newMainTab: MainMediaTab) => {
     if (newMainTab === mainTab) return;
     setMainTab(newMainTab);
-    const firstSub = MEDIA_TABS_CONFIG[newMainTab].subTabs[0]?.id || "panch_swarup";
+    const firstSub = MEDIA_TABS_CONFIG[newMainTab].subTabs[0]?.id || "sheeba_sister";
     setSubTab(firstSub);
     setSearchQuery("");
     const currentFolderPath = R2_FOLDER_MAPPING[firstSub];
@@ -768,6 +764,142 @@ export default function MediaScreen() {
       handlePlay(playlist[playlist.length - 1]);
     }
   };
+
+  const handleTogglePlayPauseRef = useRef(handleTogglePlayPause);
+  handleTogglePlayPauseRef.current = handleTogglePlayPause;
+
+  const handleNextTrackRef = useRef(handleNextTrack);
+  handleNextTrackRef.current = handleNextTrack;
+
+  const handlePreviousTrackRef = useRef(handlePreviousTrack);
+  handlePreviousTrackRef.current = handlePreviousTrack;
+
+  const handleSeekBackwardRef = useRef(handleSeekBackward);
+  handleSeekBackwardRef.current = handleSeekBackward;
+
+  const handleSeekForwardRef = useRef(handleSeekForward);
+  handleSeekForwardRef.current = handleSeekForward;
+
+  const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
+  const preloadedTrackKeyRef = useRef<string | null>(null);
+
+  // ── Pre-buffering Engine: When 4-5s remain on current track, pre-fetch next track ──
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+    if (!isPlaying || !playingTrack || audioDur <= 10) return;
+
+    const remaining = audioDur - audioPos;
+    if (remaining <= 5 && remaining > 0) {
+      const playlist = visibleTracksRef.current.length > 0 ? visibleTracksRef.current : tracksRef.current;
+      if (!playlist || playlist.length === 0) return;
+      const currentKey = playingTrack.key || playingTrack.url;
+      const currentIdx = playlist.findIndex((t) => (t.key || t.url) === currentKey);
+      const nextIdx = currentIdx !== -1 && currentIdx < playlist.length - 1 ? currentIdx + 1 : 0;
+      const nextTrack = playlist[nextIdx];
+
+      if (nextTrack && nextTrack.url) {
+        const nextKey = nextTrack.key || nextTrack.url;
+        if (preloadedTrackKeyRef.current !== nextKey) {
+          preloadedTrackKeyRef.current = nextKey;
+          let preloadAudio = preloadAudioRef.current;
+          if (!preloadAudio) {
+            preloadAudio = document.createElement("audio");
+            preloadAudio.preload = "auto";
+            preloadAudioRef.current = preloadAudio;
+          }
+          preloadAudio.src = encodeURI(decodeURI(nextTrack.url.trim()));
+          preloadAudio.load();
+        }
+      }
+    }
+  }, [audioPos, audioDur, isPlaying, playingTrack]);
+
+  // ── MediaSession API & Screen WakeLock Integration ──
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof navigator === "undefined") return;
+
+    // 1. Wake Lock handling
+    let wakeLockSentinel: any = null;
+    if (isPlaying && "wakeLock" in navigator && (navigator as any).wakeLock) {
+      try {
+        (navigator as any).wakeLock.request("screen").then((wl: any) => {
+          wakeLockSentinel = wl;
+        }).catch(() => {});
+      } catch {}
+    }
+
+    // 2. MediaSession synchronization
+    if ("mediaSession" in navigator && playingTrack) {
+      const cleanTitle = (playingTrack.name || "").replace(/\.[^/.]+$/, "").trim() || "Spiritual Audio";
+      const categoryLabel = MEDIA_TABS_CONFIG[mainTab]?.label || "Media";
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: cleanTitle,
+        artist: "Brahma Kumaris",
+        album: `Connect GOD • ${categoryLabel}`,
+        artwork: [
+          { src: "/images/channel-logos/connect_god_logo.png", sizes: "512x512", type: "image/png" },
+        ],
+      });
+
+      navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
+
+      try {
+        navigator.mediaSession.setActionHandler("play", () => {
+          handleTogglePlayPauseRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler("pause", () => {
+          handleTogglePlayPauseRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler("previoustrack", () => {
+          handlePreviousTrackRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler("nexttrack", () => {
+          handleNextTrackRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler("seekbackward", () => {
+          handleSeekBackwardRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler("seekforward", () => {
+          handleSeekForwardRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler("seekto", (details) => {
+          if (details.seekTime !== undefined && details.seekTime !== null) {
+            const target = details.seekTime;
+            setAudioPos(target);
+            setSeekTarget(target);
+            if (audioRef.current && isFinite(target)) {
+              audioRef.current.currentTime = target;
+            }
+          }
+        });
+      } catch (err) {
+        console.warn("[MediaSession] Error binding action handlers:", err);
+      }
+    }
+
+    return () => {
+      if (wakeLockSentinel) {
+        try {
+          wakeLockSentinel.release();
+        } catch {}
+      }
+    };
+  }, [playingTrack, isPlaying, mainTab]);
+
+  // Keep MediaSession position state updated
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
+    if ("setPositionState" in navigator.mediaSession && audioDur > 0 && isFinite(audioDur) && isFinite(audioPos)) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: audioDur,
+          playbackRate: 1,
+          position: Math.max(0, Math.min(audioPos, audioDur)),
+        });
+      } catch {}
+    }
+  }, [audioDur, Math.floor(audioPos)]);
 
   const fmtTime = (s: number) => {
     if (!s || isNaN(s)) return "0:00";

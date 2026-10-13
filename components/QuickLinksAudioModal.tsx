@@ -628,6 +628,142 @@ export function QuickLinksAudioModal({ visible, group, initialSubTab, onClose }:
     }
   };
 
+  const handleTogglePlayPauseRef = useRef(handleTogglePlayPause);
+  handleTogglePlayPauseRef.current = handleTogglePlayPause;
+
+  const handleNextTrackRef = useRef(handleNextTrack);
+  handleNextTrackRef.current = handleNextTrack;
+
+  const handlePreviousTrackRef = useRef(handlePreviousTrack);
+  handlePreviousTrackRef.current = handlePreviousTrack;
+
+  const handleSeekBackwardRef = useRef(handleSeekBackward);
+  handleSeekBackwardRef.current = handleSeekBackward;
+
+  const handleSeekForwardRef = useRef(handleSeekForward);
+  handleSeekForwardRef.current = handleSeekForward;
+
+  const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
+  const preloadedTrackKeyRef = useRef<string | null>(null);
+
+  // ── Pre-buffering Engine: When 4-5s remain on current track, pre-fetch next track ──
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    if (!isPlaying || !playingTrack || audioDur <= 10) return;
+
+    const remaining = audioDur - audioPos;
+    if (remaining <= 5 && remaining > 0) {
+      const playlist = visibleTracksRef.current.length > 0 ? visibleTracksRef.current : tracksRef.current;
+      if (!playlist || playlist.length === 0) return;
+      const currentKey = playingTrack.key || playingTrack.url;
+      const currentIdx = playlist.findIndex((t) => (t.key || t.url) === currentKey);
+      const nextIdx = currentIdx !== -1 && currentIdx < playlist.length - 1 ? currentIdx + 1 : 0;
+      const nextTrack = playlist[nextIdx];
+
+      if (nextTrack && nextTrack.url) {
+        const nextKey = nextTrack.key || nextTrack.url;
+        if (preloadedTrackKeyRef.current !== nextKey) {
+          preloadedTrackKeyRef.current = nextKey;
+          let preloadAudio = preloadAudioRef.current;
+          if (!preloadAudio) {
+            preloadAudio = document.createElement('audio');
+            preloadAudio.preload = 'auto';
+            preloadAudioRef.current = preloadAudio;
+          }
+          preloadAudio.src = encodeURI(decodeURI(nextTrack.url.trim()));
+          preloadAudio.load();
+        }
+      }
+    }
+  }, [audioPos, audioDur, isPlaying, playingTrack]);
+
+  // ── MediaSession API & Screen WakeLock Integration ──
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof navigator === 'undefined') return;
+
+    // 1. Wake Lock handling
+    let wakeLockSentinel: any = null;
+    if (isPlaying && 'wakeLock' in navigator && (navigator as any).wakeLock) {
+      try {
+        (navigator as any).wakeLock.request('screen').then((wl: any) => {
+          wakeLockSentinel = wl;
+        }).catch(() => {});
+      } catch {}
+    }
+
+    // 2. MediaSession synchronization
+    if ('mediaSession' in navigator && playingTrack) {
+      const cleanTitle = (playingTrack.name || '').replace(/\.[^/.]+$/, '').trim() || 'Spiritual Audio';
+      const categoryLabel = config?.title || 'Connect GOD';
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: cleanTitle,
+        artist: 'Brahma Kumaris',
+        album: `Connect GOD • ${categoryLabel}`,
+        artwork: [
+          { src: '/images/channel-logos/connect_god_logo.png', sizes: '512x512', type: 'image/png' },
+        ],
+      });
+
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+
+      try {
+        navigator.mediaSession.setActionHandler('play', () => {
+          handleTogglePlayPauseRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          handleTogglePlayPauseRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          handlePreviousTrackRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          handleNextTrackRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler('seekbackward', () => {
+          handleSeekBackwardRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler('seekforward', () => {
+          handleSeekForwardRef.current?.();
+        });
+        navigator.mediaSession.setActionHandler('seekto', (details) => {
+          if (details.seekTime !== undefined && details.seekTime !== null) {
+            const target = details.seekTime;
+            setAudioPos(target);
+            setSeekTarget(target);
+            if (audioRef.current && isFinite(target)) {
+              audioRef.current.currentTime = target;
+            }
+          }
+        });
+      } catch (err) {
+        console.warn('[QuickLinks MediaSession] Error binding action handlers:', err);
+      }
+    }
+
+    return () => {
+      if (wakeLockSentinel) {
+        try {
+          wakeLockSentinel.release();
+        } catch {}
+      }
+    };
+  }, [playingTrack, isPlaying, config]);
+
+  // Keep MediaSession position state updated
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    if ('setPositionState' in navigator.mediaSession && audioDur > 0 && isFinite(audioDur) && isFinite(audioPos)) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: audioDur,
+          playbackRate: 1,
+          position: Math.max(0, Math.min(audioPos, audioDur)),
+        });
+      } catch {}
+    }
+  }, [audioDur, Math.floor(audioPos)]);
+
   const fmtTime = (s: number) => {
     if (!s || isNaN(s)) return '0:00';
     const m = Math.floor(s / 60);

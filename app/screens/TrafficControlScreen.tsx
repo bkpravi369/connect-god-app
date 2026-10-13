@@ -393,7 +393,7 @@ export default function TrafficControlScreen() {
     setHourlyChimesEnabled(next);
     setJSON(STORAGE_KEYS.hourlyChimes, next);
     syncAlarms();
-    toast.show(next ? 'Hourly chimes enabled' : 'Hourly chimes muted', 'info');
+    toast.show(next ? 'One Minute Meditation enabled' : 'One Minute Meditation muted', 'info');
   };
 
   const getAlarmState = (key: string): AlarmState => presetStates[key] ?? DEFAULT_ALARM_STATE;
@@ -582,11 +582,11 @@ export default function TrafficControlScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Traffic Control</Text>
-            <Text style={styles.headerSub}>Scheduled meditation alarms & hourly chimes</Text>
+            <Text style={styles.headerSub}>Scheduled meditation alarms & one minute meditation</Text>
           </View>
         </View>
 
-        {/* ── 1. Hourly Chimes Master Control ───────────────────────── */}
+        {/* ── 1. One Minute Meditation Master Control ───────────────────────── */}
         <View style={styles.chimesCard}>
           <View style={styles.chimesTopRow}>
             <View style={styles.chimesLeft}>
@@ -598,11 +598,11 @@ export default function TrafficControlScreen() {
                 )}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.chimesTitle}>Hourly Chimes</Text>
+                <Text style={styles.chimesTitle}>One Minute Meditation</Text>
                 <Text style={styles.chimesSub}>
                   {hourlyChimesEnabled
-                    ? 'Active: Plays dedicated chime song on non-traffic hours'
-                    : 'Muted: No hourly chimes'}
+                    ? 'Active: Plays one minute meditation on non-traffic hours'
+                    : 'Muted: No one minute meditation'}
                 </Text>
               </View>
             </View>
@@ -630,7 +630,7 @@ export default function TrafficControlScreen() {
                   activePlayingSlot === 'hourly_chime' && styles.previewChimeBtnTextActive,
                 ]}
               >
-                {activePlayingSlot === 'hourly_chime' ? 'Stop Chime Song' : 'Listen to Hourly Chime Song'}
+                {activePlayingSlot === 'hourly_chime' ? 'Stop Meditation Song' : 'Listen to One Minute Meditation Song'}
               </Text>
             </Pressable>
           </View>

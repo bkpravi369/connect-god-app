@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import * as SplashScreen from 'expo-splash-screen';
@@ -57,19 +57,23 @@ export default function RootLayout() {
     }
   }, []);
 
+  const pathname = usePathname();
+  const isDesktopRoute = pathname === '/admin-manage';
+
   if (!fontsLoaded && !fontError) {
     return null;
   }
 
   return (
     <ToastProvider>
-      <View style={styles.webShell}>
-        <View style={styles.mobileAppContainer}>
+      <View style={[styles.webShell, isDesktopRoute && styles.webShellDesktop]}>
+        <View style={[styles.mobileAppContainer, isDesktopRoute && styles.mobileAppContainerDesktop]}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="about" />
             <Stack.Screen name="privacy" />
             <Stack.Screen name="wallpapers" />
+            <Stack.Screen name="admin-manage" />
             <Stack.Screen name="+not-found" />
           </Stack>
         </View>
@@ -87,6 +91,11 @@ const styles = StyleSheet.create({
     backgroundColor: Platform.OS === 'web' ? '#090d16' : '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  webShellDesktop: {
+    backgroundColor: '#0f172a',
+    alignItems: 'stretch',
+    justifyContent: 'flex-start',
   },
   mobileAppContainer: {
     flex: 1,
@@ -108,5 +117,13 @@ const styles = StyleSheet.create({
           elevation: 25,
         }
       : {}),
+  },
+  mobileAppContainerDesktop: {
+    maxWidth: '100%',
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
+    backgroundColor: '#0f172a',
   },
 });

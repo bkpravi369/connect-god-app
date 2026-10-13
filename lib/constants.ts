@@ -744,7 +744,12 @@ export const STORAGE_KEYS = {
   trafficTracks: 'connectgod_traffic_tracks',
   trafficCacheStatus: 'connectgod_traffic_cache_status',
   automation: 'connectgod_automation_config',
+  firstLaunchWizard: 'connectgod_first_launch_wizard_v1',
+  varadanOverride: 'connectgod_varadan_override_v1',
+  websiteUrl: 'connectgod_website_url',
 } as const;
+
+export const DEFAULT_WEBSITE_URL = 'https://www.bkkozhikode.com/';
 
 // ── Google Drive URL helpers ──────────────────────────────────────────
 

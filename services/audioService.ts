@@ -6,7 +6,7 @@ import { MediaTrack, OWN_TUNES_TRACKS } from '@/constants/mediaTracks';
 
 export const WORKER_BASE_URL = 'https://babacloudflare.bkpraveen2010.workers.dev';
 
-export type MainMediaTab = 'songs' | 'commentary' | 'music' | 'ringtones';
+export type MainMediaTab = 'commentary' | 'songs' | 'music' | 'ringtones';
 
 export type SubTabKey =
   // [SONGS]
@@ -433,9 +433,9 @@ export async function prefetchMainTabAudio(
   forceRefresh = false
 ): Promise<Record<string, MediaTrack[]>> {
   const subTabsByMain: Record<MainMediaTab, SubTabKey[]> = {
-    songs: ['panch_swarup', 'hindi', 'malayalam', 'om_and_bhog', 'own_tunes'],
     commentary: ['sheeba_sister', 'sheeja_sister', 'others'],
-    music: ['function_music', 'own_music', 'meditation_music'],
+    songs: ['hindi', 'malayalam', 'om_and_bhog', 'own_tunes'],
+    music: ['own_music', 'meditation_music'],
     ringtones: ['ringtone_hindi', 'ringtone_malayalam'],
   };
 

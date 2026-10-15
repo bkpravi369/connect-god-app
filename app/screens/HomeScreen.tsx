@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { Sparkles, Youtube, ArrowRight, Globe, ExternalLink } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import {
   FEATURED_VIDEOS,
@@ -77,12 +79,25 @@ export default function HomeScreen({
     }
   };
 
-  const handleWebsitePress = () => {
+  const handleWebsitePress = async () => {
     const targetUrl = getJSON<string>(STORAGE_KEYS.websiteUrl, DEFAULT_WEBSITE_URL) || DEFAULT_WEBSITE_URL;
-    Linking.openURL(targetUrl).catch((err) => {
-      console.warn('[HomeScreen] Could not open website:', err);
-      toast.show('Unable to open website link', 'error');
-    });
+    try {
+      if (Capacitor.isNativePlatform()) {
+        await Browser.open({ url: targetUrl });
+      } else if (typeof window !== 'undefined') {
+        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        await Linking.openURL(targetUrl);
+      }
+    } catch (err) {
+      console.warn('[HomeScreen] Could not open website via Browser API, trying Linking fallback:', err);
+      try {
+        await Linking.openURL(targetUrl);
+      } catch (linkErr) {
+        console.warn('[HomeScreen] Final fallback failed:', linkErr);
+        toast.show('Unable to open website link', 'error');
+      }
+    }
   };
   
   // Live Vardan extraction state (Zero manual JSON dependency)

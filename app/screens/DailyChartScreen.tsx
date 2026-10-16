@@ -10,13 +10,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Check, Plus, X, ChevronLeft, ChevronRight, ChevronDown, BarChart3, Trash2, Calendar } from 'lucide-react-native';
+import { Check, Plus, X, ChevronLeft, ChevronRight, ChevronDown, BarChart3, Trash2, Calendar, Download, Share2 } from 'lucide-react-native';
 import { COLORS, FONTS, RADIUS, SHADOWS, SPACING, BOTTOM_NAV_PADDING } from '@/lib/theme';
 import { DEFAULT_ITEMS, ChecklistItem } from '@/lib/constants';
 import { monthDayPercentages, monthlyAnalytics } from '@/lib/analytics';
 import { monthLabel, todayISO, prettyDate } from '@/lib/dates';
 import { getJSON, setJSON } from '@/lib/storage';
 import { useToast } from '@/components/ToastProvider';
+import { generateMonthlyReportHtml, exportMonthlyReport, shareMonthlyReport } from '@/lib/chartPdf';
 
 type CombinedItem = ChecklistItem & { customId?: string };
 
@@ -156,6 +157,24 @@ export default function DailyChartScreen() {
     return { label: '🧘 Start Daily Chart', color: '#94a3b8' };
   }, [scorePercent]);
 
+  const handleQuickDownloadPdf = useCallback(() => {
+    const d = new Date(activeDate);
+    const y = d.getFullYear();
+    const m = d.getMonth();
+    const curStats = monthlyAnalytics(entries as never[], y, m, allItems.length);
+    const curDayData = monthDayPercentages(entries as never[], y, m, allItems.length);
+    const html = generateMonthlyReportHtml({
+      year: y,
+      month: m,
+      stats: curStats,
+      dayData: curDayData,
+      items: allItems,
+      entries,
+    });
+    toast.show('Opening PDF Report...', 'info');
+    exportMonthlyReport(html);
+  }, [activeDate, entries, allItems, toast]);
+
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
@@ -211,13 +230,23 @@ export default function DailyChartScreen() {
           </View>
         </View>
 
-        <Pressable
-          style={({ pressed }) => [styles.analyticsBtn, pressed && styles.analyticsBtnPressed]}
-          onPress={() => setAnalyticsView(true)}
-        >
-          <BarChart3 color={COLORS.primary[700]} size={20} strokeWidth={2.2} />
-          <Text style={styles.analyticsBtnText}>Monthly / Yearly Progress</Text>
-        </Pressable>
+        <View style={styles.headerActionRow}>
+          <Pressable
+            style={({ pressed }) => [styles.analyticsBtn, pressed && styles.analyticsBtnPressed]}
+            onPress={() => setAnalyticsView(true)}
+          >
+            <BarChart3 color={COLORS.primary[700]} size={19} strokeWidth={2.2} />
+            <Text style={styles.analyticsBtnText}>Monthly Progress</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.quickPdfBtn, pressed && styles.quickPdfBtnPressed]}
+            onPress={handleQuickDownloadPdf}
+          >
+            <Download color="#ffffff" size={17} strokeWidth={2.4} />
+            <Text style={styles.quickPdfBtnText}>Download PDF</Text>
+          </Pressable>
+        </View>
 
         {loading ? (
           <ActivityIndicator color={COLORS.primary[600]} size="large" style={{ marginTop: 40 }} />
@@ -262,6 +291,7 @@ export default function DailyChartScreen() {
         onClose={() => setAnalyticsView(false)}
         entries={entries}
         totalItems={allItems.length}
+        items={allItems}
       />
     </View>
   );
@@ -433,12 +463,15 @@ function AnalyticsModal({
   onClose,
   entries,
   totalItems,
+  items,
 }: {
   visible: boolean;
   onClose: () => void;
   entries: StoredEntry[];
   totalItems: number;
+  items: CombinedItem[];
 }) {
+  const toast = useToast();
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -461,6 +494,34 @@ function AnalyticsModal({
     setDropdownOpen(false);
   };
 
+  const handleDownloadPdf = useCallback(() => {
+    const html = generateMonthlyReportHtml({
+      year,
+      month,
+      stats,
+      dayData,
+      items,
+      entries,
+    });
+    toast.show('Opening PDF Report...', 'info');
+    exportMonthlyReport(html);
+  }, [year, month, stats, dayData, items, entries, toast]);
+
+  const handleShareReport = useCallback(async () => {
+    toast.show('Preparing report summary...', 'info');
+    const res = await shareMonthlyReport({
+      monthLabelText: monthLabel(year, month),
+      stats,
+    });
+    if (res === 'shared') {
+      toast.show('Report shared successfully', 'success');
+    } else if (res === 'copied') {
+      toast.show('Summary copied to clipboard', 'success');
+    } else {
+      toast.show('Could not share report', 'error');
+    }
+  }, [year, month, stats, toast]);
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
@@ -468,9 +529,19 @@ function AnalyticsModal({
         <View style={[styles.modalSheet, { maxHeight: '88%' }]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Monthly Analytics</Text>
-            <Pressable style={styles.modalClose} onPress={onClose} hitSlop={12}>
-              <X color={COLORS.neutral[500]} size={20} strokeWidth={2.2} />
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Pressable
+                style={({ pressed }) => [styles.modalIconBtn, pressed && styles.dateNavBtnPressed]}
+                onPress={handleShareReport}
+                hitSlop={8}
+                accessibilityLabel="Share Report"
+              >
+                <Share2 color={COLORS.primary[700]} size={18} strokeWidth={2.2} />
+              </Pressable>
+              <Pressable style={styles.modalClose} onPress={onClose} hitSlop={12}>
+                <X color={COLORS.neutral[500]} size={20} strokeWidth={2.2} />
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.dropdownWrap}>
@@ -509,6 +580,25 @@ function AnalyticsModal({
                 </ScrollView>
               </View>
             )}
+          </View>
+
+          {/* Prominent PDF Download & Share Action Bar */}
+          <View style={styles.reportActionBar}>
+            <Pressable
+              style={({ pressed }) => [styles.reportDownloadBtn, pressed && styles.reportDownloadBtnPressed]}
+              onPress={handleDownloadPdf}
+            >
+              <Download color="#ffffff" size={17} strokeWidth={2.4} />
+              <Text style={styles.reportDownloadBtnText}>Download PDF Report</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [styles.reportShareBtn, pressed && styles.reportShareBtnPressed]}
+              onPress={handleShareReport}
+            >
+              <Share2 color={COLORS.primary[700]} size={17} strokeWidth={2.2} />
+              <Text style={styles.reportShareBtnText}>Share</Text>
+            </Pressable>
           </View>
 
           <View style={styles.monthNav}>
@@ -659,20 +749,104 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: COLORS.primary[900],
   },
-  analyticsBtn: {
+  headerActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  analyticsBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
     backgroundColor: COLORS.neutral[0],
     borderWidth: 1,
     borderColor: COLORS.primary[100],
     borderRadius: RADIUS.lg,
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.md,
-    marginBottom: SPACING.md,
   },
   analyticsBtnPressed: { backgroundColor: COLORS.primary[50] },
-  analyticsBtnText: { fontFamily: FONTS.sansSemiBold, fontSize: 14, color: COLORS.primary[700] },
+  analyticsBtnText: { fontFamily: FONTS.sansSemiBold, fontSize: 13, color: COLORS.primary[700] },
+  quickPdfBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.primary[800],
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    ...SHADOWS.sm,
+  },
+  quickPdfBtnPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }],
+  },
+  quickPdfBtnText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 13,
+    color: '#ffffff',
+  },
+  modalIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.primary[50],
+    borderWidth: 1,
+    borderColor: COLORS.primary[100],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  reportDownloadBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: COLORS.primary[700],
+    borderRadius: RADIUS.lg,
+    paddingVertical: 12,
+    ...SHADOWS.sm,
+  },
+  reportDownloadBtnPressed: {
+    backgroundColor: COLORS.primary[800],
+    transform: [{ scale: 0.98 }],
+  },
+  reportDownloadBtnText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 13.5,
+    color: '#ffffff',
+  },
+  reportShareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.neutral[0],
+    borderWidth: 1.5,
+    borderColor: COLORS.primary[200],
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: 12,
+  },
+  reportShareBtnPressed: {
+    backgroundColor: COLORS.primary[50],
+    transform: [{ scale: 0.98 }],
+  },
+  reportShareBtnText: {
+    fontFamily: FONTS.sansBold,
+    fontSize: 13.5,
+    color: COLORS.primary[700],
+  },
   list: { gap: SPACING.sm },
   row: {
     flexDirection: 'row',

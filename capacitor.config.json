@@ -10,7 +10,6 @@
     "allowNavigation": [
       "app.bkkozhikode.com",
       "connect-god-app.vercel.app",
-      "*.bkkozhikode.com",
       "*.vercel.app"
     ]
   },

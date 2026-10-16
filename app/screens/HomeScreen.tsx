@@ -82,23 +82,17 @@ export default function HomeScreen({
   const handleWebsitePress = async () => {
     const targetUrl = getJSON<string>(STORAGE_KEYS.websiteUrl, DEFAULT_WEBSITE_URL) || DEFAULT_WEBSITE_URL;
     try {
-      if (Capacitor.isNativePlatform()) {
-        await Browser.open({ url: targetUrl });
-      } else if (typeof window !== 'undefined') {
-        window.open(targetUrl, '_blank', 'noopener,noreferrer');
+      await Browser.open({ url: targetUrl });
+    } catch (e) {
+      if (typeof window !== 'undefined') {
+        window.open(targetUrl, '_blank');
       } else {
-        await Linking.openURL(targetUrl);
-      }
-    } catch (err) {
-      console.warn('[HomeScreen] Could not open website via Browser API, trying Linking fallback:', err);
-      try {
-        await Linking.openURL(targetUrl);
-      } catch (linkErr) {
-        console.warn('[HomeScreen] Final fallback failed:', linkErr);
-        toast.show('Unable to open website link', 'error');
+        Linking.openURL(targetUrl).catch(() => {});
       }
     }
   };
+
+  const handleOpenWebsite = handleWebsitePress;
   
   // Live Vardan extraction state (Zero manual JSON dependency)
   const [extractedVardan, setExtractedVardan] = useState<string>('');
